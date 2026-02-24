@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentType {
+  WALLET_CHARGE
+  PURCHASE
+  RENEWAL
+}
+
+enum PaymentGateway {
+  TETRA98
+  WALLET
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  WAITING_REVIEW
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum WalletTransactionType {
+  CHARGE
+  PURCHASE
+  ADMIN_ADJUST
+  AFFILIATE_REWARD
+}
+
+enum AffiliateRewardType {
+  FIXED
+  PERCENT
+}
+
+model User {
+  id                        String              @id @default(cuid())
+  telegramId                BigInt              @unique
+  telegramUsername          String?
+  firstName                 String?
+  lastName                  String?
+  isBanned                  Boolean             @default(false)
+  walletBalanceTomans       Int                 @default(0)
+  usedTestSubscription      Boolean             @default(false)
+  firstPurchaseAt           DateTime?
+  affiliateRewardProcessed  Boolean             @default(false)
+  referredById              String?
+  referredBy                User?               @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals                 User[]              @relation("UserReferrals")
+  services                  Service[]
+  payments                  Payment[]           @relation("UserPayments")
+  reviewedPayments          Payment[]           @relation("AdminReviews")
+  walletTransactions        WalletTransaction[]
+  promoUsages               PromoUsage[]
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+
+  @@index([referredById])
+}
+
+model Plan {
+  id           String    @id @default(cuid())
+  name         String
+  trafficGb    Int
+  durationDays Int
+  priceTomans  Int
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  services     Service[]
+  payments     Payment[]
+
+  @@unique([name, trafficGb, durationDays])
+}
+
+model Service {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId            String?
+  plan              Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  name              String
+  remnaUsername     String    @unique
+  remnaUserUuid     String    @unique
+  shortUuid         String?
+  subscriptionUrl   String?
+  trafficLimitBytes BigInt
+  expireAt          DateTime
+  isActive          Boolean   @default(true)
+  lastKnownUsedBytes BigInt   @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  payments          Payment[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Payment {
+  id                String             @id @default(cuid())
+  userId            String
+  user              User               @relation("UserPayments", fields: [userId], references: [id], onDelete: Cascade)
+  type              PaymentType
+  gateway           PaymentGateway
+  status            PaymentStatus      @default(PENDING)
+  amountTomans      Int
+  amountRials       Int
+  authority         String?            @unique
+  hashId            String?            @unique
+  description       String?
+  targetServiceId   String?
+  targetService     Service?           @relation(fields: [targetServiceId], references: [id], onDelete: SetNull)
+  planId            String?
+  plan              Plan?              @relation(fields: [planId], references: [id], onDelete: SetNull)
+  promoCodeId       String?
+  promoCode         PromoCode?         @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  manualReceiptFileId String?
+  callbackPayload   Json?
+  reviewedByAdminId String?
+  reviewedByAdmin   User?              @relation("AdminReviews", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  reviewNote        String?
+  completedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  walletTransactions WalletTransaction[]
+  promoUsages       PromoUsage[]
+
+  @@index([userId])
+  @@index([targetServiceId])
+  @@index([status])
+}
+
+model WalletTransaction {
+  id                String                 @id @default(cuid())
+  userId            String
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentId         String?
+  payment           Payment?               @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  amountTomans      Int
+  balanceAfterTomans Int
+  type              WalletTransactionType
+  description       String
+  createdAt         DateTime               @default(now())
+
+  @@index([userId])
+}
+
+model PromoCode {
+  id              String      @id @default(cuid())
+  code            String      @unique
+  discountPercent Int?
+  fixedTomans     Int?
+  usesLeft        Int
+  isActive        Boolean     @default(true)
+  expiresAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  payments        Payment[]
+  usages          PromoUsage[]
+}
+
+model PromoUsage {
+  id          String    @id @default(cuid())
+  promoCodeId String
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentId   String    @unique
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([promoCodeId])
+  @@index([userId])
+}
+
+model Setting {
+  id                  Int                 @id @default(1)
+  testEnabled         Boolean             @default(true)
+  testTrafficBytes    BigInt              @default(1073741824)
+  testDurationDays    Int                 @default(1)
+  notifyDaysLeft      Int                 @default(3)
+  notifyGbLeft        Int                 @default(2)
+  affiliateRewardType AffiliateRewardType @default(FIXED)
+  affiliateRewardValue Int                @default(10000)
+  manualCardNumber    String?
+  supportHandle       String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+}
