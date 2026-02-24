@@ -1,7 +1,8 @@
 import { Context, Scenes } from 'telegraf';
-import { BotSession } from './session';
+import { BotSceneSessionData, BotSession } from './session';
 
-export type BotContext = Context &
-  Scenes.WizardContext<BotSession> & {
-    session: BotSession;
-  };
+export interface BotContext extends Context {
+  session: BotSession;
+  scene: Scenes.SceneContextScene<BotContext, BotSceneSessionData>;
+  wizard: Scenes.WizardContextWizard<BotContext>;
+}

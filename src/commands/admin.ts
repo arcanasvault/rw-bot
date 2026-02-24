@@ -49,6 +49,23 @@ function getTextAfterCommand(text: string): string {
   return parts.slice(1).join(' ').trim();
 }
 
+function asPositiveInt(input: string | undefined): number | null {
+  const value = Number(input);
+  if (!Number.isInteger(value) || value <= 0) {
+    return null;
+  }
+  return value;
+}
+
+function parseListLimit(input: string | undefined, fallback = 20): number {
+  const value = Number(input);
+  if (!Number.isInteger(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.min(value, 100);
+}
+
 async function sendStats(ctx: BotContext): Promise<void> {
   const now = new Date();
 
@@ -151,9 +168,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    const limit = Number(getArgs(ctx.message.text)[0] ?? 20);
+    const limit = parseListLimit(getArgs(ctx.message.text)[0]);
     const users = await prisma.user.findMany({
-      take: Math.min(Math.max(limit, 1), 100),
+      take: limit,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -175,9 +192,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    const limit = Number(getArgs(ctx.message.text)[0] ?? 20);
+    const limit = parseListLimit(getArgs(ctx.message.text)[0]);
     const services = await prisma.service.findMany({
-      take: Math.min(Math.max(limit, 1), 100),
+      take: limit,
       include: { user: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -200,9 +217,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    const limit = Number(getArgs(ctx.message.text)[0] ?? 20);
+    const limit = parseListLimit(getArgs(ctx.message.text)[0]);
     const payments = await prisma.payment.findMany({
-      take: Math.min(Math.max(limit, 1), 100),
+      take: limit,
       include: { user: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -280,20 +297,25 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    if (amount > 0) {
-      await walletService.credit({
-        userId: user.id,
-        amountTomans: amount,
-        type: WalletTransactionType.ADMIN_ADJUST,
-        description: 'تنظیم دستی کیف پول توسط ادمین',
-      });
-    } else {
-      await walletService.debit({
-        userId: user.id,
-        amountTomans: Math.abs(amount),
-        type: WalletTransactionType.ADMIN_ADJUST,
-        description: 'کسر دستی کیف پول توسط ادمین',
-      });
+    try {
+      if (amount > 0) {
+        await walletService.credit({
+          userId: user.id,
+          amountTomans: amount,
+          type: WalletTransactionType.ADMIN_ADJUST,
+          description: 'تنظیم دستی کیف پول توسط ادمین',
+        });
+      } else {
+        await walletService.debit({
+          userId: user.id,
+          amountTomans: Math.abs(amount),
+          type: WalletTransactionType.ADMIN_ADJUST,
+          description: 'کسر دستی کیف پول توسط ادمین',
+        });
+      }
+    } catch (error) {
+      await ctx.reply(`خطا در بروزرسانی کیف پول: ${String(error)}`);
+      return;
     }
 
     await ctx.reply('کیف پول کاربر بروزرسانی شد.');
@@ -440,7 +462,10 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     await paymentOrchestrator.rejectManualPayment(payment.id, adminUserId, 'رد دستی توسط ادمین');
     await ctx.answerCbQuery('رد شد');
-    await ctx.telegram.sendMessage(Number(payment.user.telegramId), 'رسید شما رد شد. با پشتیبانی تماس بگیرید.');
+    await ctx.telegram.sendMessage(
+      Number(payment.user.telegramId),
+      'رسید شما رد شد. با پشتیبانی تماس بگیرید.',
+    );
   });
 
   bot.command('broadcast', async (ctx) => {
@@ -451,6 +476,11 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const text = getTextAfterCommand(ctx.message.text);
     if (!text) {
       await ctx.reply('فرمت درست: /broadcast <message>');
+      return;
+    }
+
+    if (text.length > 4000) {
+      await ctx.reply('متن پیام همگانی بیش از حد طولانی است.');
       return;
     }
 
@@ -502,28 +532,34 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     const payload = getTextAfterCommand(ctx.message.text);
-    const [name, trafficGbRaw, durationDaysRaw, priceRaw] = payload.split('|').map((x) => x?.trim());
+    const [name, trafficGbRaw, durationDaysRaw, priceRaw] = payload
+      .split('|')
+      .map((x) => x?.trim());
 
-    const trafficGb = Number(trafficGbRaw);
-    const durationDays = Number(durationDaysRaw);
-    const priceTomans = Number(priceRaw);
+    const trafficGb = asPositiveInt(trafficGbRaw);
+    const durationDays = asPositiveInt(durationDaysRaw);
+    const priceTomans = asPositiveInt(priceRaw);
 
     if (!name || !trafficGb || !durationDays || !priceTomans) {
       await ctx.reply('فرمت درست: /addplan name|trafficGb|durationDays|priceTomans');
       return;
     }
 
-    await prisma.plan.create({
-      data: {
-        name,
-        trafficGb,
-        durationDays,
-        priceTomans,
-        isActive: true,
-      },
-    });
+    try {
+      await prisma.plan.create({
+        data: {
+          name,
+          trafficGb,
+          durationDays,
+          priceTomans,
+          isActive: true,
+        },
+      });
 
-    await ctx.reply('پلن اضافه شد.');
+      await ctx.reply('پلن اضافه شد.');
+    } catch {
+      await ctx.reply('ثبت پلن ناموفق بود. ممکن است پلن تکراری باشد.');
+    }
   });
 
   bot.command('editplan', async (ctx) => {
@@ -536,22 +572,33 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       .split('|')
       .map((x) => x?.trim());
 
-    const trafficGb = Number(trafficGbRaw);
-    const durationDays = Number(durationDaysRaw);
-    const priceTomans = Number(priceRaw);
+    const trafficGb = asPositiveInt(trafficGbRaw);
+    const durationDays = asPositiveInt(durationDaysRaw);
+    const priceTomans = asPositiveInt(priceRaw);
     const isActive = activeRaw === '1';
 
-    if (!id || !name || !trafficGb || !durationDays || !priceTomans || !['0', '1'].includes(activeRaw ?? '')) {
+    if (
+      !id ||
+      !name ||
+      !trafficGb ||
+      !durationDays ||
+      !priceTomans ||
+      !['0', '1'].includes(activeRaw ?? '')
+    ) {
       await ctx.reply('فرمت درست: /editplan id|name|trafficGb|durationDays|priceTomans|active0or1');
       return;
     }
 
-    await prisma.plan.update({
-      where: { id },
-      data: { name, trafficGb, durationDays, priceTomans, isActive },
-    });
+    try {
+      await prisma.plan.update({
+        where: { id },
+        data: { name, trafficGb, durationDays, priceTomans, isActive },
+      });
 
-    await ctx.reply('پلن ویرایش شد.');
+      await ctx.reply('پلن ویرایش شد.');
+    } catch {
+      await ctx.reply('ویرایش پلن ناموفق بود.');
+    }
   });
 
   bot.command('delplan', async (ctx) => {
@@ -565,8 +612,12 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    await prisma.plan.delete({ where: { id } });
-    await ctx.reply('پلن حذف شد.');
+    try {
+      await prisma.plan.delete({ where: { id } });
+      await ctx.reply('پلن حذف شد.');
+    } catch {
+      await ctx.reply('حذف پلن ناموفق بود.');
+    }
   });
 
   bot.command('settest', async (ctx) => {
@@ -575,8 +626,8 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     const [trafficGbRaw, daysRaw] = getArgs(ctx.message.text);
-    const trafficGb = Number(trafficGbRaw);
-    const days = Number(daysRaw);
+    const trafficGb = asPositiveInt(trafficGbRaw);
+    const days = asPositiveInt(daysRaw);
 
     if (!trafficGb || !days) {
       await ctx.reply('فرمت درست: /settest <traffic_gb> <days>');
@@ -644,8 +695,8 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     const [daysRaw, gbRaw] = getArgs(ctx.message.text);
-    const days = Number(daysRaw);
-    const gb = Number(gbRaw);
+    const days = asPositiveInt(daysRaw);
+    const gb = asPositiveInt(gbRaw);
 
     if (!days || !gb) {
       await ctx.reply('فرمت درست: /setnotify <days> <gb>');
@@ -674,22 +725,29 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     const [typeRaw, valueRaw] = getArgs(ctx.message.text);
-    const value = Number(valueRaw);
+    const value = asPositiveInt(valueRaw);
 
     if (!['fixed', 'percent'].includes(typeRaw ?? '') || !value) {
       await ctx.reply('فرمت درست: /setaffiliate <fixed|percent> <value>');
       return;
     }
 
+    if (typeRaw === 'percent' && value > 100) {
+      await ctx.reply('در حالت درصد، مقدار باید حداکثر 100 باشد.');
+      return;
+    }
+
     await prisma.setting.upsert({
       where: { id: 1 },
       update: {
-        affiliateRewardType: typeRaw === 'fixed' ? AffiliateRewardType.FIXED : AffiliateRewardType.PERCENT,
+        affiliateRewardType:
+          typeRaw === 'fixed' ? AffiliateRewardType.FIXED : AffiliateRewardType.PERCENT,
         affiliateRewardValue: value,
       },
       create: {
         id: 1,
-        affiliateRewardType: typeRaw === 'fixed' ? AffiliateRewardType.FIXED : AffiliateRewardType.PERCENT,
+        affiliateRewardType:
+          typeRaw === 'fixed' ? AffiliateRewardType.FIXED : AffiliateRewardType.PERCENT,
         affiliateRewardValue: value,
       },
     });
@@ -708,23 +766,36 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const code = (codeRaw ?? '').toUpperCase();
     const percent = percentRaw ? Number(percentRaw) : 0;
     const fixed = fixedRaw ? Number(fixedRaw) : 0;
-    const uses = Number(usesRaw);
+    const uses = asPositiveInt(usesRaw);
 
-    if (!code || (!percent && !fixed) || !uses) {
+    if (
+      !code ||
+      (!percent && !fixed) ||
+      !uses ||
+      !Number.isFinite(percent) ||
+      !Number.isFinite(fixed) ||
+      percent < 0 ||
+      fixed < 0 ||
+      percent > 100
+    ) {
       await ctx.reply('فرمت درست: /promoadd code|percent|fixed|uses');
       return;
     }
 
-    await prisma.promoCode.create({
-      data: {
-        code,
-        discountPercent: percent || null,
-        fixedTomans: fixed || null,
-        usesLeft: uses,
-        isActive: true,
-      },
-    });
+    try {
+      await prisma.promoCode.create({
+        data: {
+          code,
+          discountPercent: percent || null,
+          fixedTomans: fixed || null,
+          usesLeft: uses,
+          isActive: true,
+        },
+      });
 
-    await ctx.reply('کد تخفیف ثبت شد.');
+      await ctx.reply('کد تخفیف ثبت شد.');
+    } catch {
+      await ctx.reply('ثبت کد تخفیف ناموفق بود. ممکن است کد تکراری باشد.');
+    }
   });
 }

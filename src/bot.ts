@@ -37,7 +37,11 @@ export function createBot(): Telegraf<BotContext> {
 
   bot.use(
     session({
-      defaultSession: (): BotSession => ({}),
+      defaultSession: (): BotSession => ({
+        __scenes: {
+          cursor: 0,
+        },
+      }),
     }),
   );
 

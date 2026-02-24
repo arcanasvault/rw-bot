@@ -55,7 +55,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       await ctx.answerCbQuery('ابتدا یک پلن را انتخاب کنید');
     }),
   async (ctx) => {
-    if (!('text' in ctx.message)) {
+    if (!ctx.message || !('text' in ctx.message)) {
       await ctx.reply('لطفا نام سرویس را متنی ارسال کنید.');
       return;
     }
@@ -73,7 +73,7 @@ const scene = new Scenes.WizardScene<BotContext>(
     return ctx.wizard.next();
   },
   async (ctx) => {
-    if (!('text' in ctx.message)) {
+    if (!ctx.message || !('text' in ctx.message)) {
       await ctx.reply('متن بفرستید.');
       return;
     }
@@ -162,7 +162,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
-    if (!('photo' in ctx.message) || !ctx.message.photo.length) {
+    if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
       await ctx.reply('لطفا عکس رسید را ارسال کنید.');
       return;
     }

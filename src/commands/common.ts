@@ -1,9 +1,9 @@
-import { Keyboard } from 'telegraf';
+import { Markup } from 'telegraf';
 import type { BotContext } from '../types/context';
 import { fa } from '../utils/farsi';
 
 export function mainMenuKeyboard() {
-  return Keyboard.keyboard([
+  return Markup.keyboard([
     [fa.menu.buy, fa.menu.renew],
     [fa.menu.myServices, fa.menu.test],
     [fa.menu.wallet, fa.menu.invite],

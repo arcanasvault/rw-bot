@@ -25,71 +25,83 @@ async function notifyAdmins(text: string): Promise<void> {
 }
 
 app.post('/callback/tetra98', async (req: Request, res: Response) => {
-  const body = req.body as Record<string, unknown>;
-  const statusRaw = body.status ?? body.Status;
-  const status = Number(statusRaw);
-  const authority = String(body.authority ?? body.Authority ?? '');
-
-  if (!authority) {
-    res.status(400).json({ ok: false });
-    return;
-  }
-
-  const payment = await prisma.payment.findFirst({
-    where: { authority },
-    include: { user: true },
-  });
-
-  if (!payment) {
-    await notifyAdmins(`Callback تترا98 با authority نامعتبر دریافت شد: ${authority}`);
-    res.status(404).json({ ok: false });
-    return;
-  }
-
-  if (payment.status === PaymentStatus.SUCCESS) {
-    res.status(200).json({ ok: true });
-    return;
-  }
-
-  if (status !== 100) {
-    await paymentOrchestrator.markPaymentFailed(payment.id, 'وضعیت اولیه callback موفق نبود');
-    await bot.telegram.sendMessage(
-      Number(payment.user.telegramId),
-      'پرداخت شما ناموفق بود. در صورت کسر وجه با پشتیبانی تماس بگیرید.',
-    );
-    await notifyAdmins(`پرداخت ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`);
-    res.status(200).json({ ok: false });
-    return;
-  }
-
-  const verify = await tetra98Service.verify(authority);
-
-  if (!verify.ok) {
-    await paymentOrchestrator.markPaymentFailed(payment.id, 'verify تترا98 ناموفق بود');
-    await bot.telegram.sendMessage(
-      Number(payment.user.telegramId),
-      'تایید پرداخت انجام نشد. با پشتیبانی تماس بگیرید.',
-    );
-    await notifyAdmins(`verify ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`);
-    res.status(200).json({ ok: false });
-    return;
-  }
+  let callbackUserTelegramId: number | null = null;
 
   try {
+    const body = req.body as Record<string, unknown>;
+    const statusRaw = body.status ?? body.Status;
+    const status = Number(statusRaw);
+    const authority = String(body.authority ?? body.Authority ?? '');
+
+    if (!authority || !/^[A-Za-z0-9_-]{6,200}$/.test(authority)) {
+      res.status(400).json({ ok: false });
+      return;
+    }
+
+    const payment = await prisma.payment.findFirst({
+      where: { authority },
+      include: { user: true },
+    });
+
+    if (!payment) {
+      await notifyAdmins(`Callback تترا98 با authority نامعتبر دریافت شد: ${authority}`);
+      res.status(404).json({ ok: false });
+      return;
+    }
+    callbackUserTelegramId = Number(payment.user.telegramId);
+
+    if (payment.status === PaymentStatus.SUCCESS || payment.status === PaymentStatus.PROCESSING) {
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    if (status !== 100) {
+      await paymentOrchestrator.markPaymentFailed(payment.id, 'وضعیت اولیه callback موفق نبود');
+      await bot.telegram.sendMessage(
+        Number(payment.user.telegramId),
+        'پرداخت شما ناموفق بود. در صورت کسر وجه با پشتیبانی تماس بگیرید.',
+      );
+      await notifyAdmins(
+        `پرداخت ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
+      );
+      res.status(200).json({ ok: false });
+      return;
+    }
+
+    const verify = await tetra98Service.verify(authority);
+
+    if (!verify.ok) {
+      await paymentOrchestrator.markPaymentFailed(payment.id, 'verify تترا98 ناموفق بود');
+      await bot.telegram.sendMessage(
+        Number(payment.user.telegramId),
+        'تایید پرداخت انجام نشد. با پشتیبانی تماس بگیرید.',
+      );
+      await notifyAdmins(
+        `verify ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
+      );
+      res.status(200).json({ ok: false });
+      return;
+    }
+
     await paymentOrchestrator.processSuccessfulPayment(payment.id);
     await bot.telegram.sendMessage(
       Number(payment.user.telegramId),
       'پرداخت شما با موفقیت تایید شد و سرویس/کیف پول بروزرسانی شد.',
     );
+    res.status(200).json({ ok: true });
   } catch (error) {
-    await notifyAdmins(`خطا در تکمیل پرداخت ${payment.id}: ${String(error)}`);
-    await bot.telegram.sendMessage(
-      Number(payment.user.telegramId),
-      'پرداخت تایید شد اما در تکمیل سرویس خطا رخ داد. لطفا با پشتیبانی تماس بگیرید.',
-    );
+    logger.error(`callback tetra98 failed: ${String(error)}`);
+    await notifyAdmins(`خطا در callback تترا98: ${String(error)}`);
+    if (callbackUserTelegramId) {
+      await bot.telegram
+        .sendMessage(
+          callbackUserTelegramId,
+          'پرداخت شما با خطا مواجه شد. لطفا با پشتیبانی تماس بگیرید.',
+        )
+        .catch(() => undefined);
+    }
+    res.status(200).json({ ok: false });
   }
-
-  res.status(200).json({ ok: true });
 });
 
 app.get('/health', (_req, res) => {
@@ -124,4 +136,12 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
+});
+
+process.on('unhandledRejection', (error) => {
+  logger.error(`Unhandled rejection: ${String(error)}`);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error(`Uncaught exception: ${String(error)}`);
 });

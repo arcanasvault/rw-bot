@@ -5,7 +5,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
   APP_URL: z.string().url(),
-  WEBHOOK_PATH: z.string().default('/telegram/webhook'),
+  WEBHOOK_PATH: z
+    .string()
+    .regex(/^\/[A-Za-z0-9/_-]*$/)
+    .default('/telegram/webhook'),
   BOT_TOKEN: z.string().min(10),
   BOT_USERNAME: z.string().min(3),
   ADMIN_TG_IDS: z.string().min(1),
@@ -28,12 +31,23 @@ if (!parsed.success) {
   throw new Error(`Invalid env vars: ${formatted}`);
 }
 
+if (parsed.data.MIN_WALLET_CHARGE_TOMANS > parsed.data.MAX_WALLET_CHARGE_TOMANS) {
+  throw new Error('Invalid env vars: MIN_WALLET_CHARGE_TOMANS must be <= MAX_WALLET_CHARGE_TOMANS');
+}
+
 function parseAdminIds(raw: string): number[] {
-  return raw
+  const list = raw
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-    .map((value) => Number(value));
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (list.length === 0) {
+    throw new Error('Invalid env vars: ADMIN_TG_IDS must include at least one numeric Telegram ID');
+  }
+
+  return list;
 }
 
 export const env = {

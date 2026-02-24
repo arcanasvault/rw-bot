@@ -17,16 +17,23 @@ export function startNotificationCron(bot: Telegraf<BotContext>): void {
       const notifyGbLeft = setting?.notifyGbLeft ?? 2;
 
       const services = await prisma.service.findMany({
-        where: { isActive: true },
+        where: { isActive: true, user: { isBanned: false } },
         include: { user: true },
       });
+
+      if (services.length === 0) {
+        logger.info('No active services found for notification');
+        return;
+      }
 
       for (const service of services) {
         try {
           const remote = await remnawaveService.getUserByUsername(service.remnaUsername);
 
-          const remoteExpireAt = remote.expireAt ? new Date(remote.expireAt) : service.expireAt;
-          const usedBytes = BigInt(remote.usedTrafficBytes ?? service.lastKnownUsedBytes);
+          const remoteExpireAt = remote.expireAt ?? service.expireAt;
+          const usedBytes = BigInt(
+            remote.userTraffic.usedTrafficBytes ?? Number(service.lastKnownUsedBytes),
+          );
           const limitBytes = BigInt(remote.trafficLimitBytes ?? service.trafficLimitBytes);
 
           await prisma.service.update({

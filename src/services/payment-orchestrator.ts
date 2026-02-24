@@ -89,9 +89,7 @@ async function markPromoUsage(payment: Payment): Promise<void> {
     await tx.promoCode.update({
       where: { id: payment.promoCodeId! },
       data: {
-        usesLeft: {
-          decrement: 1,
-        },
+        usesLeft: { decrement: 1 },
       },
     });
 
@@ -112,9 +110,7 @@ async function rewardAffiliateIfNeeded(payment: Payment): Promise<void> {
 
   const user = await prisma.user.findUnique({
     where: { id: payment.userId },
-    include: {
-      referredBy: true,
-    },
+    include: { referredBy: true },
   });
 
   if (!user || !user.referredById || user.affiliateRewardProcessed) {
@@ -130,24 +126,15 @@ async function rewardAffiliateIfNeeded(payment: Payment): Promise<void> {
       ? Math.floor((payment.amountTomans * rewardValue) / 100)
       : rewardValue;
 
-  if (rewardTomans <= 0) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        affiliateRewardProcessed: true,
-        firstPurchaseAt: new Date(),
-      },
+  if (rewardTomans > 0) {
+    await walletService.credit({
+      userId: user.referredById,
+      amountTomans: rewardTomans,
+      type: WalletTransactionType.AFFILIATE_REWARD,
+      description: `پاداش همکاری فروش از خرید کاربر ${user.telegramId.toString()}`,
+      paymentId: payment.id,
     });
-    return;
   }
-
-  await walletService.credit({
-    userId: user.referredById,
-    amountTomans: rewardTomans,
-    type: WalletTransactionType.AFFILIATE_REWARD,
-    description: `پاداش همکاری فروش از خرید کاربر ${user.telegramId.toString()}`,
-    paymentId: payment.id,
-  });
 
   await prisma.user.update({
     where: { id: user.id },
@@ -162,6 +149,16 @@ function calculateBytes(trafficGb: number): number {
   return trafficGb * 1024 * 1024 * 1024;
 }
 
+function ensureServiceName(name: string): string {
+  const trimmed = name.trim();
+
+  if (!/^[a-zA-Z0-9_-]{3,24}$/.test(trimmed)) {
+    throw new AppError('نام سرویس نامعتبر است', 'SERVICE_NAME_INVALID', 400);
+  }
+
+  return trimmed;
+}
+
 function readServiceNameFromPayload(payload: Prisma.JsonValue | null): string {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new AppError('اطلاعات پرداخت ناقص است', 'PAYLOAD_INVALID', 400);
@@ -169,11 +166,11 @@ function readServiceNameFromPayload(payload: Prisma.JsonValue | null): string {
 
   const payloadObject = payload as Prisma.JsonObject;
   const maybeServiceName = payloadObject.serviceName;
-  if (typeof maybeServiceName !== 'string' || maybeServiceName.trim().length < 2) {
+  if (typeof maybeServiceName !== 'string') {
     throw new AppError('نام سرویس نامعتبر است', 'SERVICE_NAME_INVALID', 400);
   }
 
-  return maybeServiceName;
+  return ensureServiceName(maybeServiceName);
 }
 
 function buildUniqueRemnaUsername(telegramId: bigint, serviceName: string): string {
@@ -197,6 +194,18 @@ async function completePurchase(payment: Payment): Promise<void> {
   }
 
   const serviceName = readServiceNameFromPayload(payment.callbackPayload);
+  const duplicate = await prisma.service.findFirst({
+    where: {
+      userId: user.id,
+      name: serviceName,
+    },
+    select: { id: true },
+  });
+
+  if (duplicate) {
+    throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
+  }
+
   const trafficLimitBytes = calculateBytes(plan.trafficGb);
   const expireAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
   const remnaUsername = buildUniqueRemnaUsername(user.telegramId, serviceName);
@@ -208,21 +217,30 @@ async function completePurchase(payment: Payment): Promise<void> {
     telegramId: Number(user.telegramId),
   });
 
-  await prisma.service.create({
-    data: {
-      userId: user.id,
-      planId: plan.id,
-      name: serviceName,
-      remnaUsername,
-      remnaUserUuid: created.uuid,
-      shortUuid: created.shortUuid ?? null,
-      subscriptionUrl: created.subscriptionUrl ?? null,
-      trafficLimitBytes: BigInt(trafficLimitBytes),
-      expireAt,
-      lastKnownUsedBytes: BigInt(0),
-      isActive: true,
-    },
-  });
+  try {
+    const subscription = await remnawaveService
+      .getSubscriptionByUuid(created.uuid)
+      .catch(() => null);
+
+    await prisma.service.create({
+      data: {
+        userId: user.id,
+        planId: plan.id,
+        name: serviceName,
+        remnaUsername,
+        remnaUserUuid: created.uuid,
+        shortUuid: created.shortUuid ?? null,
+        subscriptionUrl: created.subscriptionUrl ?? subscription?.subscriptionUrl ?? null,
+        trafficLimitBytes: BigInt(trafficLimitBytes),
+        expireAt,
+        lastKnownUsedBytes: BigInt(0),
+        isActive: true,
+      },
+    });
+  } catch (error) {
+    await remnawaveService.deleteUser(created.uuid).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function completeRenewal(payment: Payment): Promise<void> {
@@ -270,22 +288,34 @@ export class PaymentOrchestrator {
     amountTomans: number;
     gateway: PaymentGateway;
   }) {
+    if (!Number.isInteger(input.amountTomans) || input.amountTomans <= 0) {
+      throw new AppError('مبلغ شارژ نامعتبر است', 'INVALID_AMOUNT', 400);
+    }
+
+    if (
+      input.amountTomans < env.MIN_WALLET_CHARGE_TOMANS ||
+      input.amountTomans > env.MAX_WALLET_CHARGE_TOMANS
+    ) {
+      throw new AppError('مبلغ شارژ خارج از بازه مجاز است', 'INVALID_WALLET_RANGE', 400);
+    }
+
     const user = await findOrCreateUserByTelegramId(input.telegramId);
 
-    const payment = await prisma.payment.create({
+    return prisma.payment.create({
       data: {
         userId: user.id,
         type: PaymentType.WALLET_CHARGE,
         gateway: input.gateway,
-        status: input.gateway === PaymentGateway.MANUAL ? PaymentStatus.WAITING_REVIEW : PaymentStatus.PENDING,
+        status:
+          input.gateway === PaymentGateway.MANUAL
+            ? PaymentStatus.WAITING_REVIEW
+            : PaymentStatus.PENDING,
         amountTomans: input.amountTomans,
         amountRials: toRials(input.amountTomans),
         hashId: `wallet-${Date.now()}-${input.telegramId}`,
         description: 'شارژ کیف پول',
       },
     });
-
-    return payment;
   }
 
   async createPurchasePayment(input: {
@@ -302,10 +332,31 @@ export class PaymentOrchestrator {
       throw new AppError('پلن انتخابی نامعتبر است', 'PLAN_NOT_AVAILABLE', 400);
     }
 
+    const serviceName = ensureServiceName(input.serviceName);
+
+    const duplicate = await prisma.service.findFirst({
+      where: {
+        userId: user.id,
+        name: serviceName,
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
+    }
+
     const discount = await computeDiscount({
       amountTomans: plan.priceTomans,
       promoCode: input.promoCode,
     });
+
+    if (
+      input.gateway === PaymentGateway.WALLET &&
+      user.walletBalanceTomans < discount.finalAmountTomans
+    ) {
+      throw new AppError('موجودی کیف پول کافی نیست', 'INSUFFICIENT_WALLET', 400);
+    }
 
     const payment = await prisma.payment.create({
       data: {
@@ -313,28 +364,34 @@ export class PaymentOrchestrator {
         planId: plan.id,
         type: PaymentType.PURCHASE,
         gateway: input.gateway,
-        status: input.gateway === PaymentGateway.MANUAL ? PaymentStatus.WAITING_REVIEW : PaymentStatus.PENDING,
+        status:
+          input.gateway === PaymentGateway.MANUAL
+            ? PaymentStatus.WAITING_REVIEW
+            : PaymentStatus.PENDING,
         amountTomans: discount.finalAmountTomans,
         amountRials: toRials(discount.finalAmountTomans),
         hashId: `purchase-${Date.now()}-${input.telegramId}`,
         promoCodeId: discount.promoCodeId,
         description: `خرید پلن ${plan.name}`,
-        callbackPayload: {
-          serviceName: input.serviceName,
-        },
+        callbackPayload: { serviceName },
       },
     });
 
     if (input.gateway === PaymentGateway.WALLET) {
-      await walletService.debit({
-        userId: user.id,
-        amountTomans: discount.finalAmountTomans,
-        type: WalletTransactionType.PURCHASE,
-        description: `خرید پلن ${plan.name}`,
-        paymentId: payment.id,
-      });
+      try {
+        await walletService.debit({
+          userId: user.id,
+          amountTomans: discount.finalAmountTomans,
+          type: WalletTransactionType.PURCHASE,
+          description: `خرید پلن ${plan.name}`,
+          paymentId: payment.id,
+        });
 
-      await this.processSuccessfulPayment(payment.id);
+        await this.processSuccessfulPayment(payment.id);
+      } catch (error) {
+        await this.markPaymentFailed(payment.id, 'پرداخت از کیف پول ناموفق بود');
+        throw error;
+      }
     }
 
     return payment;
@@ -365,6 +422,13 @@ export class PaymentOrchestrator {
       promoCode: input.promoCode,
     });
 
+    if (
+      input.gateway === PaymentGateway.WALLET &&
+      user.walletBalanceTomans < discount.finalAmountTomans
+    ) {
+      throw new AppError('موجودی کیف پول کافی نیست', 'INSUFFICIENT_WALLET', 400);
+    }
+
     const payment = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -372,7 +436,10 @@ export class PaymentOrchestrator {
         planId: service.plan.id,
         type: PaymentType.RENEWAL,
         gateway: input.gateway,
-        status: input.gateway === PaymentGateway.MANUAL ? PaymentStatus.WAITING_REVIEW : PaymentStatus.PENDING,
+        status:
+          input.gateway === PaymentGateway.MANUAL
+            ? PaymentStatus.WAITING_REVIEW
+            : PaymentStatus.PENDING,
         amountTomans: discount.finalAmountTomans,
         amountRials: toRials(discount.finalAmountTomans),
         hashId: `renew-${Date.now()}-${input.telegramId}`,
@@ -382,15 +449,20 @@ export class PaymentOrchestrator {
     });
 
     if (input.gateway === PaymentGateway.WALLET) {
-      await walletService.debit({
-        userId: user.id,
-        amountTomans: discount.finalAmountTomans,
-        type: WalletTransactionType.PURCHASE,
-        description: `تمدید سرویس ${service.name}`,
-        paymentId: payment.id,
-      });
+      try {
+        await walletService.debit({
+          userId: user.id,
+          amountTomans: discount.finalAmountTomans,
+          type: WalletTransactionType.PURCHASE,
+          description: `تمدید سرویس ${service.name}`,
+          paymentId: payment.id,
+        });
 
-      await this.processSuccessfulPayment(payment.id);
+        await this.processSuccessfulPayment(payment.id);
+      } catch (error) {
+        await this.markPaymentFailed(payment.id, 'تمدید از کیف پول ناموفق بود');
+        throw error;
+      }
     }
 
     return payment;
@@ -407,6 +479,13 @@ export class PaymentOrchestrator {
       throw new AppError('پرداخت برای تترا قابل ایجاد نیست', 'PAYMENT_GATEWAY_INVALID', 400);
     }
 
+    if (payment.authority) {
+      return {
+        authority: payment.authority,
+        link: tetra98Service.getPaymentLink(payment.authority),
+      };
+    }
+
     const created = await tetra98Service.createOrder({
       hashId: payment.hashId ?? payment.id,
       amountRials: payment.amountRials,
@@ -419,8 +498,11 @@ export class PaymentOrchestrator {
         authority: created.authority,
         callbackPayload:
           payment.callbackPayload && typeof payment.callbackPayload === 'object'
-            ? { ...(payment.callbackPayload as object), tetraCreate: created.raw }
-            : { tetraCreate: created.raw },
+            ? {
+                ...(payment.callbackPayload as Prisma.JsonObject),
+                tetraAuthority: created.authority,
+              }
+            : { tetraAuthority: created.authority },
       },
     });
 
@@ -431,6 +513,19 @@ export class PaymentOrchestrator {
   }
 
   async submitManualReceipt(paymentId: string, fileId: string): Promise<void> {
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+
+    if (!payment || payment.gateway !== PaymentGateway.MANUAL) {
+      throw new AppError('پرداخت دستی پیدا نشد', 'MANUAL_PAYMENT_NOT_FOUND', 404);
+    }
+
+    if (
+      payment.status !== PaymentStatus.PENDING &&
+      payment.status !== PaymentStatus.WAITING_REVIEW
+    ) {
+      throw new AppError('این پرداخت قابل ارسال رسید نیست', 'MANUAL_PAYMENT_STATUS_INVALID', 400);
+    }
+
     await prisma.payment.update({
       where: { id: paymentId },
       data: {
@@ -441,18 +536,38 @@ export class PaymentOrchestrator {
   }
 
   async processSuccessfulPayment(paymentId: string): Promise<void> {
+    const lock = await prisma.payment.updateMany({
+      where: {
+        id: paymentId,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.WAITING_REVIEW] },
+      },
+      data: {
+        status: PaymentStatus.PROCESSING,
+      },
+    });
+
+    if (lock.count === 0) {
+      const current = await prisma.payment.findUnique({ where: { id: paymentId } });
+
+      if (!current) {
+        throw new AppError('پرداخت پیدا نشد', 'PAYMENT_NOT_FOUND', 404);
+      }
+
+      if (current.status === PaymentStatus.SUCCESS) {
+        return;
+      }
+
+      if (current.status === PaymentStatus.PROCESSING) {
+        throw new AppError('پرداخت در حال پردازش است', 'PAYMENT_PROCESSING', 409);
+      }
+
+      throw new AppError('این پرداخت قابل تکمیل نیست', 'PAYMENT_STATUS_INVALID', 400);
+    }
+
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
 
     if (!payment) {
       throw new AppError('پرداخت پیدا نشد', 'PAYMENT_NOT_FOUND', 404);
-    }
-
-    if (payment.status === PaymentStatus.SUCCESS) {
-      return;
-    }
-
-    if (![PaymentStatus.PENDING, PaymentStatus.WAITING_REVIEW].includes(payment.status)) {
-      throw new AppError('این پرداخت قابل تکمیل نیست', 'PAYMENT_STATUS_INVALID', 400);
     }
 
     try {
@@ -485,9 +600,12 @@ export class PaymentOrchestrator {
         },
       });
     } catch (error) {
-      logger.error(`Payment completion failed paymentId=${payment.id}`);
-      await prisma.payment.update({
-        where: { id: payment.id },
+      logger.error(`Payment completion failed paymentId=${payment.id} error=${String(error)}`);
+      await prisma.payment.updateMany({
+        where: {
+          id: payment.id,
+          status: PaymentStatus.PROCESSING,
+        },
         data: {
           status: PaymentStatus.FAILED,
           reviewNote: 'تکمیل پرداخت با خطا مواجه شد',
@@ -498,8 +616,13 @@ export class PaymentOrchestrator {
   }
 
   async markPaymentFailed(paymentId: string, reason: string): Promise<void> {
-    await prisma.payment.update({
-      where: { id: paymentId },
+    await prisma.payment.updateMany({
+      where: {
+        id: paymentId,
+        status: {
+          in: [PaymentStatus.PENDING, PaymentStatus.WAITING_REVIEW, PaymentStatus.PROCESSING],
+        },
+      },
       data: {
         status: PaymentStatus.FAILED,
         reviewNote: reason,
@@ -518,7 +641,9 @@ export class PaymentOrchestrator {
     });
   }
 
-  async createTestSubscription(telegramId: number): Promise<{ serviceName: string; subscriptionUrl: string }> {
+  async createTestSubscription(
+    telegramId: number,
+  ): Promise<{ serviceName: string; subscriptionUrl: string }> {
     const user = await findOrCreateUserByTelegramId(telegramId);
     const setting = await prisma.setting.findUnique({ where: { id: 1 } });
 
@@ -527,30 +652,39 @@ export class PaymentOrchestrator {
       throw new AppError('در حال حاضر سرویس تست ارائه نمی‌شود', 'TEST_DISABLED', 400);
     }
 
-    if (user.usedTestSubscription) {
+    const reserved = await prisma.user.updateMany({
+      where: {
+        id: user.id,
+        usedTestSubscription: false,
+      },
+      data: {
+        usedTestSubscription: true,
+      },
+    });
+
+    if (reserved.count === 0) {
       throw new AppError('سرویس تست قبلا برای شما فعال شده است', 'TEST_ALREADY_USED', 400);
     }
 
     const trafficBytes = Number(setting?.testTrafficBytes ?? BigInt(1 * 1024 * 1024 * 1024));
     const durationDays = setting?.testDurationDays ?? 1;
     const expireAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
-    const serviceName = `تست-${Date.now().toString().slice(-4)}`;
-    const remnaUsername = buildUniqueRemnaUsername(user.telegramId, `test-${Date.now().toString().slice(-4)}`);
+    const serviceName = `test-${Date.now().toString().slice(-4)}`;
+    const remnaUsername = buildUniqueRemnaUsername(user.telegramId, serviceName);
 
-    const created = await remnawaveService.createUser({
-      username: remnaUsername,
-      trafficLimitBytes: trafficBytes,
-      expireAt,
-      telegramId,
-    });
-
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { usedTestSubscription: true },
+    try {
+      const created = await remnawaveService.createUser({
+        username: remnaUsername,
+        trafficLimitBytes: trafficBytes,
+        expireAt,
+        telegramId,
       });
 
-      await tx.service.create({
+      const subscription = await remnawaveService
+        .getSubscriptionByUuid(created.uuid)
+        .catch(() => null);
+
+      await prisma.service.create({
         data: {
           userId: user.id,
           planId: null,
@@ -558,19 +692,25 @@ export class PaymentOrchestrator {
           remnaUsername,
           remnaUserUuid: created.uuid,
           shortUuid: created.shortUuid ?? null,
-          subscriptionUrl: created.subscriptionUrl ?? null,
+          subscriptionUrl: created.subscriptionUrl ?? subscription?.subscriptionUrl ?? null,
           trafficLimitBytes: BigInt(trafficBytes),
           expireAt,
           lastKnownUsedBytes: BigInt(0),
           isActive: true,
         },
       });
-    });
 
-    return {
-      serviceName,
-      subscriptionUrl: created.subscriptionUrl ?? '',
-    };
+      return {
+        serviceName,
+        subscriptionUrl: created.subscriptionUrl ?? subscription?.subscriptionUrl ?? '',
+      };
+    } catch (error) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { usedTestSubscription: false },
+      });
+      throw error;
+    }
   }
 }
 

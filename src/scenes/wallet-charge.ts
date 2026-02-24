@@ -17,7 +17,7 @@ const scene = new Scenes.WizardScene<BotContext>(
     return ctx.wizard.next();
   },
   async (ctx) => {
-    if (!('text' in ctx.message)) {
+    if (!ctx.message || !('text' in ctx.message)) {
       await ctx.reply('مبلغ را به صورت عدد ارسال کنید.');
       return;
     }
@@ -37,12 +37,15 @@ const scene = new Scenes.WizardScene<BotContext>(
     const state = ctx.wizard.state as WalletWizardState;
     state.amountTomans = amount;
 
-    await ctx.reply(`مبلغ ${formatTomans(amount)} برای شارژ کیف پول تایید شد. روش پرداخت را انتخاب کنید:`, {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('پرداخت آنلاین تترا98', 'wallet_gateway:tetra')],
-        [Markup.button.callback('پرداخت کارت به کارت', 'wallet_gateway:manual')],
-      ]).reply_markup,
-    });
+    await ctx.reply(
+      `مبلغ ${formatTomans(amount)} برای شارژ کیف پول تایید شد. روش پرداخت را انتخاب کنید:`,
+      {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('پرداخت آنلاین تترا98', 'wallet_gateway:tetra')],
+          [Markup.button.callback('پرداخت کارت به کارت', 'wallet_gateway:manual')],
+        ]).reply_markup,
+      },
+    );
 
     return ctx.wizard.next();
   },
@@ -101,7 +104,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
-    if (!('photo' in ctx.message) || !ctx.message.photo.length) {
+    if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
       await ctx.reply('لطفا عکس رسید را ارسال کنید.');
       return;
     }

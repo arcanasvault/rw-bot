@@ -1,6 +1,10 @@
 import { Scenes } from 'telegraf';
 
-export interface BotSession extends Scenes.WizardSessionData {
+export interface BotSceneSessionData extends Scenes.WizardSessionData {
+  cursor: number;
+}
+
+export interface BotSession extends Scenes.WizardSession<BotSceneSessionData> {
   captcha?: {
     answer: string;
     verified: boolean;
@@ -14,6 +18,7 @@ export interface BuyWizardState {
   serviceName?: string;
   promoCode?: string;
   finalAmountTomans?: number;
+  manualPaymentId?: string;
 }
 
 export interface RenewWizardState {
@@ -22,10 +27,10 @@ export interface RenewWizardState {
   planPriceTomans?: number;
   promoCode?: string;
   finalAmountTomans?: number;
+  manualPaymentId?: string;
 }
 
 export interface WalletWizardState {
   amountTomans?: number;
+  manualPaymentId?: string;
 }
-
-export type BotSceneContext = Scenes.WizardContext<BotSession>;

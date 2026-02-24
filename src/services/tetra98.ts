@@ -39,7 +39,7 @@ export class Tetra98Service {
       CallbackURL: input.callbackUrl,
     });
 
-    const status = data.status ?? data.Status;
+    const status = Number(data.status ?? data.Status ?? 0);
     const authority = (data.authority ?? data.Authority ?? '').toString();
 
     if (status !== 100 || !authority) {
@@ -55,7 +55,7 @@ export class Tetra98Service {
       authority,
     });
 
-    const status = data.status ?? data.Status;
+    const status = Number(data.status ?? data.Status ?? 0);
 
     return { ok: status === 100, raw: data };
   }

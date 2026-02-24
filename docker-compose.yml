@@ -1,28 +1,42 @@
 version: '3.9'
+
 services:
   db:
     image: postgres:16-alpine
     container_name: remnawave_bot_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: vpn_bot
-      POSTGRES_USER: vpn_bot
-      POSTGRES_PASSWORD: vpn_bot_password
+      POSTGRES_DB: ${POSTGRES_DB:-vpn_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-vpn_bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vpn_bot_password}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-vpn_bot} -d ${POSTGRES_DB:-vpn_bot}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - '5432:5432'
+      - '${POSTGRES_PORT:-5432}:5432'
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: remnawave_bot_app
     restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      RUN_SEED: ${RUN_SEED:-false}
     ports:
-      - '3000:3000'
+      - '${APP_PORT:-3000}:3000'
+    volumes:
+      - app_logs:/app/logs
 
 volumes:
   postgres_data:
+  app_logs:

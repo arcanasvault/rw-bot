@@ -61,9 +61,8 @@ async function showWallet(ctx: BotContext): Promise<void> {
   }
 
   await ctx.reply(`موجودی کیف پول شما: ${formatTomans(user.walletBalanceTomans)}`, {
-    reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback('شارژ کیف پول', 'wallet_charge')],
-    ]).reply_markup,
+    reply_markup: Markup.inlineKeyboard([[Markup.button.callback('شارژ کیف پول', 'wallet_charge')]])
+      .reply_markup,
   });
 }
 
@@ -92,9 +91,9 @@ async function showServices(ctx: BotContext): Promise<void> {
 
     try {
       const remote = await remnawaveService.getUserByUsername(service.remnaUsername);
-      usedBytes = BigInt(remote.usedTrafficBytes ?? service.lastKnownUsedBytes);
+      usedBytes = BigInt(remote.userTraffic.usedTrafficBytes ?? Number(service.lastKnownUsedBytes));
       limitBytes = BigInt(remote.trafficLimitBytes ?? service.trafficLimitBytes);
-      expireAt = remote.expireAt ? new Date(remote.expireAt) : service.expireAt;
+      expireAt = remote.expireAt ?? service.expireAt;
       subscriptionUrl = remote.subscriptionUrl ?? service.subscriptionUrl;
 
       await prisma.service.update({
@@ -196,9 +195,9 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
   });
 
   bot.hears(fa.menu.support, async (ctx) => {
-    const handle = env.ADMIN_TG_HANDLE.startsWith('@')
-      ? env.ADMIN_TG_HANDLE.slice(1)
-      : env.ADMIN_TG_HANDLE;
+    const setting = await prisma.setting.findUnique({ where: { id: 1 } });
+    const supportHandle = setting?.supportHandle ?? env.ADMIN_TG_HANDLE;
+    const handle = supportHandle.startsWith('@') ? supportHandle.slice(1) : supportHandle;
 
     await ctx.reply('برای پشتیبانی روی دکمه زیر بزنید:', {
       reply_markup: Markup.inlineKeyboard([

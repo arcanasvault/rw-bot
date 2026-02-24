@@ -1,157 +1,126 @@
 # Remnawave VPN Telegram Bot
 
-ربات فروش VPN با TypeScript + Telegraf + Prisma + PostgreSQL، با پنل Remnawave و درگاه Tetra98.
+ربات فروش VPN با TypeScript + Telegraf + Prisma + PostgreSQL برای بازار ایران، با پنل RemnaWave و درگاه Tetra98.
 
-## امکانات
+## قابلیت‌ها
 
-- خرید پلن های پویا
-- چند سرویس برای هر کاربر
+- خرید پلن پویا
+- داشتن چند سرویس مستقل برای هر کاربر
 - تمدید سرویس
-- سرویس تست یک بار (قابل ریست)
+- سرویس تست یک‌بار در طول عمر هر Telegram ID
 - کیف پول + شارژ با Tetra98
-- پرداخت کارت به کارت + رسید عکس + تایید ادمین
+- پرداخت کارت‌به‌کارت + ثبت رسید عکس + تایید/رد ادمین
 - کد تخفیف
-- همکاری فروش (referral)
-- اعلان روزانه کاهش حجم/روز
-- پنل ادمین کامل
-- webhook تلگرام + callback درگاه
+- همکاری فروش (Referral)
+- اعلان روزانه کاهش حجم/انقضا در ساعت 16:00 تهران
+- پنل ادمین
+- حالت Webhook
 
-## ساختار
+## پیش‌نیازهای Ubuntu VPS
 
-```text
-src/
-  app.ts
-  bot.ts
-  commands/
-  scenes/
-  services/
-  middlewares/
-  utils/
-  config/
-  lib/
-  types/
-prisma/
-  schema.prisma
-  seed.ts
-  migrations/
-scripts/backup-db.sh
-```
+- Ubuntu 22.04 یا 24.04
+- دسترسی `sudo`
+- `git`
+- دامنه HTTPS (برای webhook)
 
-## ساخت ربات در BotFather
+## ساخت ربات تلگرام (BotFather)
 
-1. به `@BotFather` بروید.
-2. `/newbot` را اجرا کنید.
-3. `BOT_TOKEN` را بردارید.
-4. username ربات را در `BOT_USERNAME` قرار دهید.
+1. به `@BotFather` پیام بدهید و دستور `/newbot` را اجرا کنید.
+2. نام ربات و سپس username را وارد کنید.
+3. توکن ربات را دریافت کنید و برای `BOT_TOKEN` نگه دارید.
+4. username ربات (بدون `@`) را برای `BOT_USERNAME` نگه دارید.
 
-## راه اندازی Ubuntu VPS
-
-### 1) نصب پیش نیازها
-
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl git build-essential ca-certificates gnupg
-```
-
-### 2) نصب Node.js 22
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-corepack enable
-node -v
-npm -v
-```
-
-### 3) نصب PostgreSQL
-
-```bash
-sudo apt install -y postgresql postgresql-contrib
-sudo systemctl enable postgresql
-sudo systemctl start postgresql
-```
-
-### 4) ساخت DB و User
-
-```bash
-sudo -u postgres psql
-```
-
-```sql
-CREATE USER vpn_bot WITH PASSWORD 'change_this_password';
-CREATE DATABASE vpn_bot OWNER vpn_bot;
-GRANT ALL PRIVILEGES ON DATABASE vpn_bot TO vpn_bot;
-\q
-```
-
-### 5) دریافت پروژه
+## نصب و راه‌اندازی سریع با Docker (پیشنهادی)
 
 ```bash
 git clone <YOUR_REPO_URL> remnawave-vpn-bot
 cd remnawave-vpn-bot
-cp .env.example .env
-pnpm install
+chmod +x setup.sh
+./setup.sh
 ```
 
-### 6) تنظیم ENV
+پس از اجرای اسکریپت، گزینه `1) Install / Setup` را بزنید.
 
-مقادیر ضروری:
+## منوی `setup.sh`
 
-- `APP_URL` مثل `https://bot.example.com`
-- `WEBHOOK_PATH` مثل `/telegram/webhook`
-- `BOT_TOKEN`
-- `BOT_USERNAME`
-- `ADMIN_TG_IDS`
-- `ADMIN_TG_HANDLE`
-- `DATABASE_URL`
-- `REMNAWAVE_URL`
-- `REMNAWAVE_TOKEN`
-- `TETRA98_API_KEY`
-- `MANUAL_CARD_NUMBER`
+1. Install / Setup
+2. Start / Restart
+3. Stop
+4. Update (git pull + rebuild)
+5. Logs
+6. Backup DB
+7. Restore DB
+8. Uninstall (remove containers + volumes)
+9. Exit
 
-### 7) Migration و Seed
+### Install / Setup چه می‌کند؟
 
-```bash
-pnpm prisma:generate
-pnpm prisma:deploy
-pnpm db:seed
+- Docker و Docker Compose plugin را در صورت نیاز نصب می‌کند.
+- فایل `.env` را از `.env.example` می‌سازد.
+- مقادیر ضروری را تعاملی می‌گیرد.
+- مجوز `.env` را روی `700` می‌گذارد.
+- کانتینرهای `app` و `db` را build/up می‌کند.
+- `prisma generate` و `prisma migrate deploy` اجرا می‌کند.
+- در صورت `RUN_SEED=true`، seed اجرا می‌شود.
+- راهنمای Nginx برای reverse proxy نمایش می‌دهد.
+
+## تنظیم دامنه و Webhook
+
+- آدرس webhook:
+
+```text
+${APP_URL}${WEBHOOK_PATH}
 ```
 
-### 8) Build و Run با PM2
+- callback درگاه Tetra98:
 
-```bash
-pnpm build
-pnpm add -g pm2
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup
+```text
+${APP_URL}/callback/tetra98
 ```
 
-## Webhook
+### نمونه Nginx
 
-- Telegram webhook: `${APP_URL}${WEBHOOK_PATH}`
-- Tetra98 callback: `${APP_URL}/callback/tetra98`
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
 
-برای تست لوکال:
-
-```bash
-ngrok http 3000
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
-سپس `APP_URL` را روی آدرس ngrok بگذارید.
+بعد از تنظیم Nginx، TLS (Let's Encrypt) را فعال کنید.
 
-## تنظیم Tetra98
+## متغیرهای محیطی `.env`
 
-- `TETRA98_API_KEY` را در `.env` قرار دهید.
-- callback را روی `https://your-domain.com/callback/tetra98` تنظیم کنید.
+کلیدی‌ترین موارد:
 
-جریان:
+- `NODE_ENV=production`
+- `APP_URL=https://your-domain.com`
+- `WEBHOOK_PATH=/telegram/webhook`
+- `BOT_TOKEN=...`
+- `BOT_USERNAME=...`
+- `ADMIN_TG_IDS=111111111,222222222`
+- `ADMIN_TG_HANDLE=your_support_id`
+- `DATABASE_URL=postgresql://...`
+- `REMNAWAVE_URL=https://your-panel.com/api` (یا بدون `/api`)
+- `REMNAWAVE_TOKEN=...`
+- `TETRA98_API_KEY=...`
+- `MANUAL_CARD_NUMBER=...`
+- `MIN_WALLET_CHARGE_TOMANS=10000`
+- `MAX_WALLET_CHARGE_TOMANS=10000000`
 
-1. `create_order`
-2. لینک `https://t.me/Tetra98_bot?start=pay_{Authority}`
-3. callback
-4. `verify`
-5. تکمیل خرید/تمدید/شارژ
+## اجرای سرویس‌ها با Docker Compose
+
+- `db`: PostgreSQL 16 (persistent volume)
+- `app`: Bot + Express webhook server
 
 ## دستورات ادمین
 
@@ -176,27 +145,60 @@ ngrok http 3000
 - `/setaffiliate <fixed|percent> <value>`
 - `/promoadd code|percent|fixed|uses`
 
-## بکاپ دیتابیس با Cron
+## مانیتورینگ و عملیات
+
+- لاگ:
 
 ```bash
-bash scripts/backup-db.sh
+./setup.sh
+# گزینه 5
 ```
 
-نمونه کران روزانه 03:00:
-
-```cron
-0 3 * * * cd /path/to/remnawave-vpn-bot && DATABASE_URL="postgresql://vpn_bot:change_this_password@localhost:5432/vpn_bot?schema=public" bash scripts/backup-db.sh >> backups/cron.log 2>&1
-```
-
-## Docker (اختیاری)
+- بکاپ دیتابیس:
 
 ```bash
-docker compose up -d --build
-docker compose exec app pnpm prisma:deploy
-docker compose exec app pnpm db:seed
+./setup.sh
+# گزینه 6
 ```
 
-## Scripts
+- ریستور دیتابیس:
+
+```bash
+./setup.sh
+# گزینه 7
+```
+
+- آپدیت:
+
+```bash
+./setup.sh
+# گزینه 4
+```
+
+## اجرای PM2 (اختیاری، حالت بدون Docker)
+
+```bash
+pnpm install
+pnpm prisma:generate
+pnpm prisma:deploy
+pnpm build
+pnpm add -g pm2
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+## اجرای محلی بدون Docker (اختیاری)
+
+```bash
+pnpm install
+pnpm prisma:generate
+pnpm prisma:deploy
+pnpm db:seed
+pnpm dev
+```
+
+## اسکریپت‌های مفید
 
 ```bash
 pnpm dev

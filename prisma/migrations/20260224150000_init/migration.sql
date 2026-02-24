@@ -1,3 +1,6 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateEnum
 CREATE TYPE "PaymentType" AS ENUM ('WALLET_CHARGE', 'PURCHASE', 'RENEWAL');
 
@@ -5,7 +8,7 @@ CREATE TYPE "PaymentType" AS ENUM ('WALLET_CHARGE', 'PURCHASE', 'RENEWAL');
 CREATE TYPE "PaymentGateway" AS ENUM ('TETRA98', 'WALLET', 'MANUAL');
 
 -- CreateEnum
-CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'WAITING_REVIEW', 'SUCCESS', 'FAILED', 'CANCELED');
+CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PROCESSING', 'WAITING_REVIEW', 'SUCCESS', 'FAILED', 'CANCELED');
 
 -- CreateEnum
 CREATE TYPE "WalletTransactionType" AS ENUM ('CHARGE', 'PURCHASE', 'ADMIN_ADJUST', 'AFFILIATE_REWARD');
@@ -166,10 +169,10 @@ CREATE UNIQUE INDEX "Service_remnaUsername_key" ON "Service"("remnaUsername");
 CREATE UNIQUE INDEX "Service_remnaUserUuid_key" ON "Service"("remnaUserUuid");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Service_userId_name_key" ON "Service"("userId", "name");
+CREATE INDEX "Service_userId_idx" ON "Service"("userId");
 
 -- CreateIndex
-CREATE INDEX "Service_userId_idx" ON "Service"("userId");
+CREATE UNIQUE INDEX "Service_userId_name_key" ON "Service"("userId", "name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Payment_authority_key" ON "Payment"("authority");
@@ -239,3 +242,4 @@ ALTER TABLE "PromoUsage" ADD CONSTRAINT "PromoUsage_userId_fkey" FOREIGN KEY ("u
 
 -- AddForeignKey
 ALTER TABLE "PromoUsage" ADD CONSTRAINT "PromoUsage_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

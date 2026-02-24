@@ -1,19 +1,26 @@
-FROM node:22-alpine AS deps
+FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json ./
-RUN corepack enable && pnpm install --frozen-lockfile=false
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
-FROM node:22-alpine AS build
+FROM node:20-alpine AS build
 WORKDIR /app
+RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN corepack enable && pnpm prisma generate && pnpm build
+RUN pnpm prisma generate && pnpm build
 
-FROM node:22-alpine
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN corepack enable
 COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
-CMD ["node", "dist/app.js"]
+COPY --from=build /app/docker/entrypoint.sh ./docker/entrypoint.sh
+RUN mkdir -p /app/logs
+EXPOSE 3000
+CMD ["/app/docker/entrypoint.sh"]

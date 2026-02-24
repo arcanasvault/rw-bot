@@ -21,6 +21,7 @@ enum PaymentGateway {
 
 enum PaymentStatus {
   PENDING
+  PROCESSING
   WAITING_REVIEW
   SUCCESS
   FAILED
