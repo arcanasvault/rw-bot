@@ -182,6 +182,12 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
+    if (ctx?.message && 'text' in ctx.message && ctx.message.text.trim() === 'لغو') {
+      ctx.session.pendingManualPaymentId = undefined;
+      await ctx.reply('درخواست شما لغو شد.');
+      return ctx.scene.leave();
+    }
+
     if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
       await ctx.reply('لطفا عکس رسید را ارسال کنید.');
       return;

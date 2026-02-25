@@ -37,13 +37,30 @@ const scene = new Scenes.WizardScene<BotContext>(
     const state = ctx.wizard.state as WalletWizardState;
     state.amountTomans = amount;
 
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: {
+        enableTetra98: true,
+        enableManualPayment: true,
+      },
+    });
+
+    const tetraEnabled = setting?.enableTetra98 ?? true;
+    const manualEnabled = setting?.enableManualPayment ?? true;
+
+    const paymentButtons = [];
+
+    if (tetraEnabled) {
+      paymentButtons.push([Markup.button.callback('پرداخت آنلاین تترا98', 'wallet_gateway:tetra')]);
+    }
+    if (manualEnabled) {
+      paymentButtons.push([Markup.button.callback('پرداخت کارت به کارت', 'wallet_gateway:manual')]);
+    }
+
     await ctx.reply(
       `مبلغ ${formatTomans(amount)} برای شارژ کیف پول تایید شد. روش پرداخت را انتخاب کنید:`,
       {
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('پرداخت آنلاین تترا98', 'wallet_gateway:tetra')],
-          [Markup.button.callback('پرداخت کارت به کارت', 'wallet_gateway:manual')],
-        ]).reply_markup,
+        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
       },
     );
 
@@ -104,8 +121,14 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
+    if (ctx?.message && 'text' in ctx.message && ctx.message.text.trim() === 'لغو') {
+      ctx.session.pendingManualPaymentId = undefined;
+      await ctx.reply('درخواست شما لغو شد.');
+      return ctx.scene.leave();
+    }
+
     if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
-      await ctx.reply('لطفا عکس رسید را ارسال کنید.');
+      await ctx.reply('لطفا عکس رسید را ارسال کنید. برای انصراف، کلمه "لغو" را ارسال کنید.');
       return;
     }
 
