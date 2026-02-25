@@ -34,3 +34,16 @@ export interface WalletWizardState {
   amountTomans?: number;
   manualPaymentId?: string;
 }
+
+export interface AdminAddPlanWizardState {
+  name?: string;
+  displayName?: string;
+  trafficGb?: number;
+  durationDays?: number;
+  priceTomans?: number;
+  internalSquadId?: string;
+}
+
+export interface AdminEditPlanWizardState extends AdminAddPlanWizardState {
+  planId?: string;
+}

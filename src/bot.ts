@@ -8,6 +8,8 @@ import { registerStartHandlers } from './commands/start';
 import { AppError } from './errors/app-error';
 import { logger } from './lib/logger';
 import { ensureKnownUser } from './middlewares/auth';
+import { adminAddPlanWizardScene } from './scenes/admin-add-plan';
+import { adminEditPlanWizardScene } from './scenes/admin-edit-plan';
 import { buyWizardScene } from './scenes/buy';
 import { renewWizardScene } from './scenes/renew';
 import { walletChargeWizardScene } from './scenes/wallet-charge';
@@ -20,6 +22,8 @@ export function createBot(): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(env.BOT_TOKEN);
 
   const stage = new Scenes.Stage<BotContext>([
+    adminAddPlanWizardScene,
+    adminEditPlanWizardScene,
     buyWizardScene,
     renewWizardScene,
     walletChargeWizardScene,

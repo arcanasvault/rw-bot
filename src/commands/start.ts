@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import { Markup, Telegraf } from 'telegraf';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
@@ -9,33 +10,29 @@ import { bytesToGb, daysLeft } from '../utils/format';
 import { fa } from '../utils/farsi';
 import { showMainMenu } from './common';
 
-function extractStartPayload(text: string): string | null {
-  const raw = text.trim();
+const START_BURST_WINDOW_MS = 15_000;
+const START_BURST_LIMIT = 5;
+const startBurstMap = new Map<number, { count: number; resetAt: number }>();
 
-  const inlineRef = raw.match(/\/start\?(.+)$/);
-  if (inlineRef && inlineRef[1]) {
-    return inlineRef[1].trim();
+const SERVICE_CALLBACK_PREFIX = 'svc';
+const SERVICES_LIST_CB = `${SERVICE_CALLBACK_PREFIX}:list`;
+const SERVICES_BACK_CB = `${SERVICE_CALLBACK_PREFIX}:back`;
+
+function isStartBurstLimited(telegramId: number): boolean {
+  const now = Date.now();
+  const current = startBurstMap.get(telegramId);
+
+  if (!current || now > current.resetAt) {
+    startBurstMap.set(telegramId, {
+      count: 1,
+      resetAt: now + START_BURST_WINDOW_MS,
+    });
+    return false;
   }
 
-  const parts = raw.split(' ');
-  if (parts.length < 2) {
-    return null;
-  }
-
-  return parts.slice(1).join(' ').trim();
-}
-
-function parseReferral(payload: string | null): number | null {
-  if (!payload) {
-    return null;
-  }
-
-  const refMatch = payload.match(/ref[_=](\d+)/);
-  if (!refMatch) {
-    return null;
-  }
-
-  return Number(refMatch[1]);
+  current.count += 1;
+  startBurstMap.set(telegramId, current);
+  return current.count > START_BURST_LIMIT;
 }
 
 function shouldRequireCaptcha(ctx: BotContext): boolean {
@@ -55,25 +52,64 @@ function createCaptcha(): { question: string; answer: string } {
   };
 }
 
-const START_BURST_WINDOW_MS = 15_000;
-const START_BURST_LIMIT = 5;
-const startBurstMap = new Map<number, { count: number; resetAt: number }>();
+function asString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
 
-function isStartBurstLimited(telegramId: number): boolean {
-  const now = Date.now();
-  const current = startBurstMap.get(telegramId);
-
-  if (!current || now > current.resetAt) {
-    startBurstMap.set(telegramId, {
-      count: 1,
-      resetAt: now + START_BURST_WINDOW_MS,
-    });
-    return false;
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  current.count += 1;
-  startBurstMap.set(telegramId, current);
-  return current.count > START_BURST_LIMIT;
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function extractSubscriptionData(payload: unknown): {
+  smartLink: string | null;
+  base64: string | null;
+  emergencyLinks: string[];
+} {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      smartLink: null,
+      base64: null,
+      emergencyLinks: [],
+    };
+  }
+
+  const source = payload as Record<string, unknown>;
+  const nestedSubscription =
+    source.subscription && typeof source.subscription === 'object' && !Array.isArray(source.subscription)
+      ? (source.subscription as Record<string, unknown>)
+      : null;
+
+  const smartLink =
+    asString(source.subscriptionUrl) ??
+    asString(source.subscription_url) ??
+    asString(source.url) ??
+    asString(source.link) ??
+    (nestedSubscription ? asString(nestedSubscription.url) : null);
+
+  const base64 =
+    asString(source.base64) ??
+    asString(source.subscriptionBase64) ??
+    (nestedSubscription ? asString(nestedSubscription.base64) : null);
+
+  const emergencyLinks =
+    asStringArray(source.links).length > 0
+      ? asStringArray(source.links)
+      : nestedSubscription
+        ? asStringArray(nestedSubscription.links)
+        : [];
+
+  return {
+    smartLink,
+    base64,
+    emergencyLinks,
+  };
 }
 
 async function showWallet(ctx: BotContext): Promise<void> {
@@ -95,64 +131,91 @@ async function showWallet(ctx: BotContext): Promise<void> {
   });
 }
 
-async function showServices(ctx: BotContext): Promise<void> {
+async function getOwnedService(
+  telegramId: number,
+  serviceId: string,
+): Promise<
+  | {
+      id: string;
+      name: string;
+      remnaUsername: string;
+      remnaUserUuid: string;
+      expireAt: Date;
+      trafficLimitBytes: bigint;
+      lastKnownUsedBytes: bigint;
+      subscriptionUrl: string | null;
+    }
+  | null
+> {
+  const user = await prisma.user.findUnique({
+    where: { telegramId: BigInt(telegramId) },
+    select: { id: true },
+  });
+  if (!user) {
+    return null;
+  }
+
+  return prisma.service.findFirst({
+    where: {
+      id: serviceId,
+      userId: user.id,
+    },
+    select: {
+      id: true,
+      name: true,
+      remnaUsername: true,
+      remnaUserUuid: true,
+      expireAt: true,
+      trafficLimitBytes: true,
+      lastKnownUsedBytes: true,
+      subscriptionUrl: true,
+    },
+  });
+}
+
+async function renderServicesList(ctx: BotContext, editCurrentMessage = false): Promise<void> {
   if (!ctx.from) {
     return;
   }
 
   const user = await prisma.user.findUnique({
     where: { telegramId: BigInt(ctx.from.id) },
-    include: { services: { orderBy: { createdAt: 'desc' } } },
+    include: {
+      services: {
+        include: { plan: true },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
   });
 
   if (!user || user.services.length === 0) {
+    if (editCurrentMessage) {
+      await ctx.answerCbQuery();
+      await ctx.reply('شما هنوز سرویسی ندارید.');
+      return;
+    }
     await ctx.reply('شما هنوز سرویسی ندارید.');
     return;
   }
 
-  const lines: string[] = [];
+  const keyboard = Markup.inlineKeyboard(
+    user.services.map((service) => {
+      const label = service.plan?.displayName ?? service.name;
+      return [Markup.button.callback(label, `${SERVICE_CALLBACK_PREFIX}:item:${service.id}`)];
+    }),
+  );
 
-  for (const service of user.services) {
-    let usedBytes = service.lastKnownUsedBytes;
-    let limitBytes = service.trafficLimitBytes;
-    let expireAt = service.expireAt;
-    let subscriptionUrl = service.subscriptionUrl;
-
-    try {
-      const remote = await remnawaveService.getUserByUsername(service.remnaUsername);
-      usedBytes = BigInt(remote.userTraffic.usedTrafficBytes ?? Number(service.lastKnownUsedBytes));
-      limitBytes = BigInt(remote.trafficLimitBytes ?? service.trafficLimitBytes);
-      expireAt = remote.expireAt ?? service.expireAt;
-      subscriptionUrl = remote.subscriptionUrl ?? service.subscriptionUrl;
-
-      await prisma.service.update({
-        where: { id: service.id },
-        data: {
-          lastKnownUsedBytes: usedBytes,
-          trafficLimitBytes: limitBytes,
-          expireAt,
-          subscriptionUrl,
-        },
-      });
-    } catch {
-      // If panel read fails, show last saved values.
-    }
-
-    const remainBytes = limitBytes > usedBytes ? limitBytes - usedBytes : BigInt(0);
-
-    lines.push(
-      [
-        `نام: ${service.name}`,
-        `حجم باقیمانده: ${Math.floor(bytesToGb(remainBytes))} گیگابایت`,
-        `روز باقی مانده: ${Math.max(0, daysLeft(expireAt))}`,
-        subscriptionUrl ? `لینک اشتراک: ${subscriptionUrl}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    );
+  if (editCurrentMessage && 'editMessageText' in ctx) {
+    await ctx.editMessageText('سرویس‌های شما:', {
+      reply_markup: keyboard.reply_markup,
+    });
+    await ctx.answerCbQuery();
+    return;
   }
 
-  await ctx.reply(lines.join('\n\n'));
+  await ctx.reply('سرویس‌های شما:', {
+    reply_markup: keyboard.reply_markup,
+  });
 }
 
 export function registerStartHandlers(bot: Telegraf<BotContext>): void {
@@ -167,8 +230,6 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     }
 
     try {
-      const payload = extractStartPayload(ctx.message?.text ?? '');
-
       const user = await prisma.user.upsert({
         where: { telegramId: BigInt(ctx.from.id) },
         update: {
@@ -184,20 +245,13 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
         },
       });
 
-      const referralId = parseReferral(payload);
-      if (referralId && referralId !== ctx.from.id && !user.referredById) {
-        const referrer = await prisma.user.findUnique({
-          where: { telegramId: BigInt(referralId) },
-          select: { id: true },
-        });
-
-        if (referrer) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { referredById: referrer.id },
-          });
-        }
-      }
+      // Referral flow is intentionally disabled for now.
+      // if (setting.enableReferrals) {
+      //   const payload = extractStartPayload(ctx.message?.text ?? '');
+      //   const referralId = parseReferral(payload);
+      //   ...
+      // }
+      void user;
 
       if (shouldRequireCaptcha(ctx) && !ctx.session.captcha?.verified) {
         const captcha = createCaptcha();
@@ -217,20 +271,186 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
   });
 
   bot.hears(fa.menu.myServices, async (ctx) => {
-    await showServices(ctx);
+    await renderServicesList(ctx);
+  });
+
+  bot.action(SERVICES_LIST_CB, async (ctx) => {
+    await renderServicesList(ctx, true);
+  });
+
+  bot.action(SERVICES_BACK_CB, async (ctx) => {
+    await renderServicesList(ctx, true);
+  });
+
+  bot.action(/^svc:item:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const serviceId = ctx.match[1];
+    const service = await getOwnedService(ctx.from.id, serviceId);
+    if (!service) {
+      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      return;
+    }
+
+    let usedBytes = service.lastKnownUsedBytes;
+    let limitBytes = service.trafficLimitBytes;
+    let expireAt = service.expireAt;
+
+    try {
+      const remote = await remnawaveService.getUserByUsername(service.remnaUsername);
+      usedBytes = BigInt(remote.userTraffic.usedTrafficBytes ?? Number(service.lastKnownUsedBytes));
+      limitBytes = BigInt(remote.trafficLimitBytes ?? Number(service.trafficLimitBytes));
+      expireAt = remote.expireAt ?? service.expireAt;
+
+      await prisma.service.update({
+        where: { id: service.id },
+        data: {
+          lastKnownUsedBytes: usedBytes,
+          trafficLimitBytes: limitBytes,
+          expireAt,
+          subscriptionUrl: remote.subscriptionUrl ?? service.subscriptionUrl,
+        },
+      });
+    } catch {
+      // Fallback to last known data in DB.
+    }
+
+    const remainBytes = limitBytes > usedBytes ? limitBytes - usedBytes : BigInt(0);
+    const remainGb = Math.floor(bytesToGb(remainBytes));
+    const remainDays = Math.max(0, daysLeft(expireAt));
+
+    await ctx.editMessageText(
+      `سرویس: ${service.name}\nحجم باقیمانده: ${remainGb} گیگابایت\nروز باقی مانده: ${remainDays}`,
+      {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('لینک هوشمند', `svc:smart:${service.id}`)],
+          [Markup.button.callback('اشتراک QR', `svc:qr:${service.id}`)],
+          [Markup.button.callback('لینک اضطراری', `svc:emergency:${service.id}`)],
+          [Markup.button.callback('بازگشت', SERVICES_BACK_CB)],
+        ]).reply_markup,
+      },
+    );
+
+    await ctx.answerCbQuery();
+  });
+
+  bot.action(/^svc:smart:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const service = await getOwnedService(ctx.from.id, ctx.match[1]);
+    if (!service) {
+      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+    try {
+      const remote = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
+      const parsed = extractSubscriptionData(remote);
+      const smart = parsed.smartLink ?? parsed.base64;
+
+      if (!smart) {
+        await ctx.reply('لینک هوشمند برای این سرویس یافت نشد.');
+        return;
+      }
+
+      await prisma.service.update({
+        where: { id: service.id },
+        data: { subscriptionUrl: parsed.smartLink ?? service.subscriptionUrl },
+      });
+
+      await ctx.reply(`لینک هوشمند:\n${smart}`);
+    } catch (error) {
+      logger.error(`smart-link fetch failed service=${service.id} error=${String(error)}`);
+      await ctx.reply('دریافت لینک هوشمند ناموفق بود.');
+    }
+  });
+
+  bot.action(/^svc:emergency:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const service = await getOwnedService(ctx.from.id, ctx.match[1]);
+    if (!service) {
+      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+    try {
+      const remote = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
+      const parsed = extractSubscriptionData(remote);
+
+      if (!parsed.emergencyLinks.length) {
+        await ctx.reply('لینک اضطراری برای این سرویس یافت نشد.');
+        return;
+      }
+
+      await ctx.reply(`لینک‌های اضطراری ${service.name}:`);
+      for (const link of parsed.emergencyLinks) {
+        await ctx.reply(link);
+      }
+    } catch (error) {
+      logger.error(`emergency-links fetch failed service=${service.id} error=${String(error)}`);
+      await ctx.reply('دریافت لینک اضطراری ناموفق بود.');
+    }
+  });
+
+  bot.action(/^svc:qr:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const service = await getOwnedService(ctx.from.id, ctx.match[1]);
+    if (!service) {
+      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+    try {
+      const remote = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
+      const parsed = extractSubscriptionData(remote);
+      const qrSource = parsed.smartLink ?? parsed.emergencyLinks[0] ?? parsed.base64;
+
+      if (!qrSource) {
+        await ctx.reply('داده‌ای برای ساخت QR یافت نشد.');
+        return;
+      }
+
+      const qrBuffer = await QRCode.toBuffer(qrSource, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 700,
+      });
+
+      await ctx.replyWithPhoto(
+        { source: qrBuffer },
+        {
+          caption: `QR اشتراک سرویس ${service.name}`,
+        },
+      );
+    } catch (error) {
+      logger.error(`subscription-qr failed service=${service.id} error=${String(error)}`);
+      await ctx.reply('ساخت QR ناموفق بود.');
+    }
   });
 
   bot.hears(fa.menu.wallet, async (ctx) => {
     await showWallet(ctx);
   });
 
-  bot.hears(fa.menu.invite, async (ctx) => {
-    if (!ctx.from) {
-      return;
-    }
+  bot.hears(fa.menu.collapse, async (ctx) => {
+    await showMainMenu(ctx, 'منو جمع شد.', true);
+  });
 
-    const link = `https://t.me/${env.BOT_USERNAME}?start=ref_${ctx.from.id}`;
-    await ctx.reply(`لینک دعوت شما:\n${link}`);
+  bot.hears(fa.menu.expand, async (ctx) => {
+    await showMainMenu(ctx, 'منو باز شد.');
   });
 
   bot.hears(fa.menu.support, async (ctx) => {
@@ -260,3 +480,4 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     await ctx.reply('پاسخ اشتباه است. دوباره تلاش کنید.');
   });
 }
+

@@ -13,6 +13,7 @@ import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { toRials } from '../utils/currency';
 import { sanitizeServiceName } from '../utils/format';
+import { parseInternalSquadIds } from '../utils/squad';
 import { remnawaveService } from './remnawave';
 import { tetra98Service } from './tetra98';
 import { walletService } from './wallet';
@@ -34,6 +35,16 @@ async function computeDiscount(input: {
   amountTomans: number;
   promoCode?: string;
 }): Promise<DiscountResult> {
+  const setting = await prisma.setting.findUnique({
+    where: { id: 1 },
+    select: { enablePromos: true },
+  });
+
+  // Promo support is kept intentionally for future admin toggle.
+  if (!setting?.enablePromos) {
+    return { finalAmountTomans: input.amountTomans, promoCodeId: null };
+  }
+
   if (!input.promoCode) {
     return { finalAmountTomans: input.amountTomans, promoCodeId: null };
   }
@@ -69,6 +80,14 @@ async function computeDiscount(input: {
 
 async function markPromoUsage(payment: Payment): Promise<void> {
   if (!payment.promoCodeId) {
+    return;
+  }
+
+  const setting = await prisma.setting.findUnique({
+    where: { id: 1 },
+    select: { enablePromos: true },
+  });
+  if (!setting?.enablePromos) {
     return;
   }
 
@@ -117,7 +136,19 @@ async function rewardAffiliateIfNeeded(payment: Payment): Promise<void> {
     return;
   }
 
-  const setting = await prisma.setting.findUnique({ where: { id: 1 } });
+  const setting = await prisma.setting.findUnique({
+    where: { id: 1 },
+    select: {
+      enableReferrals: true,
+      affiliateRewardType: true,
+      affiliateRewardValue: true,
+    },
+  });
+  // Referral support is kept intentionally for future admin toggle.
+  if (!setting?.enableReferrals) {
+    return;
+  }
+
   const rewardType = setting?.affiliateRewardType ?? AffiliateRewardType.FIXED;
   const rewardValue = setting?.affiliateRewardValue ?? 0;
 
@@ -146,7 +177,7 @@ async function rewardAffiliateIfNeeded(payment: Payment): Promise<void> {
 }
 
 function calculateBytes(trafficGb: number): number {
-  return trafficGb * 1024 * 1024 * 1024;
+  return Math.max(0, Math.floor(trafficGb * 1024 * 1024 * 1024));
 }
 
 function ensureServiceName(name: string): string {
@@ -215,6 +246,7 @@ async function completePurchase(payment: Payment): Promise<void> {
     trafficLimitBytes,
     expireAt,
     telegramId: Number(user.telegramId),
+    activeInternalSquads: parseInternalSquadIds(plan.internalSquadId),
   });
 
   try {
@@ -372,7 +404,7 @@ export class PaymentOrchestrator {
         amountRials: toRials(discount.finalAmountTomans),
         hashId: `purchase-${Date.now()}-${input.telegramId}`,
         promoCodeId: discount.promoCodeId,
-        description: `خرید پلن ${plan.name}`,
+        description: `خرید پلن ${plan.displayName}`,
         callbackPayload: { serviceName },
       },
     });
@@ -383,7 +415,7 @@ export class PaymentOrchestrator {
           userId: user.id,
           amountTomans: discount.finalAmountTomans,
           type: WalletTransactionType.PURCHASE,
-          description: `خرید پلن ${plan.name}`,
+          description: `خرید پلن ${plan.displayName}`,
           paymentId: payment.id,
         });
 
@@ -669,6 +701,7 @@ export class PaymentOrchestrator {
     const trafficBytes = Number(setting?.testTrafficBytes ?? BigInt(1 * 1024 * 1024 * 1024));
     const durationDays = setting?.testDurationDays ?? 1;
     const expireAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+    const testInternalSquadId = setting?.testInternalSquadId ?? env.DEFAULT_INTERNAL_SQUAD_ID;
     const serviceName = `test-${Date.now().toString().slice(-4)}`;
     const remnaUsername = buildUniqueRemnaUsername(user.telegramId, serviceName);
 
@@ -678,6 +711,7 @@ export class PaymentOrchestrator {
         trafficLimitBytes: trafficBytes,
         expireAt,
         telegramId,
+        activeInternalSquads: parseInternalSquadIds(testInternalSquadId),
       });
 
       const subscription = await remnawaveService

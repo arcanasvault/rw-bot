@@ -70,32 +70,35 @@ const scene = new Scenes.WizardScene<BotContext>(
       state.planPriceTomans = service.plan.priceTomans;
 
       await ctx.answerCbQuery();
-      await ctx.reply('اگر کد تخفیف دارید ارسال کنید. در غیر اینصورت بنویسید: ندارم');
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: {
+          enableTetra98: true,
+          enableManualPayment: true,
+        },
+      });
+      const tetraEnabled = setting?.enableTetra98 ?? true;
+      const manualEnabled = setting?.enableManualPayment ?? true;
+      const paymentButtons = [[Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')]];
+      if (tetraEnabled) {
+        paymentButtons.push([
+          Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
+        ]);
+      }
+      if (manualEnabled) {
+        paymentButtons.push([
+          Markup.button.callback('پرداخت کارت به کارت', 'renew_gateway:manual'),
+        ]);
+      }
+
+      await ctx.reply(`مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
+        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+      });
       return ctx.wizard.next();
     })
     .on('callback_query', async (ctx) => {
       await ctx.answerCbQuery('ابتدا سرویس را انتخاب کنید');
     }),
-  async (ctx) => {
-    if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('لطفا متن ارسال کنید.');
-      return;
-    }
-
-    const state = ctx.wizard.state as RenewWizardState;
-    const promo = ctx.message.text.trim();
-    state.promoCode = promo === 'ندارم' ? undefined : promo;
-
-    await ctx.reply(`مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')],
-        [Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra')],
-        [Markup.button.callback('پرداخت کارت به کارت', 'renew_gateway:manual')],
-      ]).reply_markup,
-    });
-
-    return ctx.wizard.next();
-  },
   new Composer<BotContext>()
     .action(/^renew_gateway:(wallet|tetra|manual)$/, async (ctx) => {
       if (!ctx.from) {
@@ -115,13 +118,33 @@ const scene = new Scenes.WizardScene<BotContext>(
       };
 
       const gateway = gatewayMap[ctx.match[1]];
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: {
+          enableTetra98: true,
+          enableManualPayment: true,
+        },
+      });
+      const tetraEnabled = setting?.enableTetra98 ?? true;
+      const manualEnabled = setting?.enableManualPayment ?? true;
+
+      if (gateway === PaymentGateway.TETRA98 && !tetraEnabled) {
+        await ctx.answerCbQuery();
+        await ctx.reply('No payment methods available');
+        return ctx.scene.leave();
+      }
+
+      if (gateway === PaymentGateway.MANUAL && !manualEnabled) {
+        await ctx.answerCbQuery();
+        await ctx.reply('No payment methods available');
+        return ctx.scene.leave();
+      }
 
       try {
         const payment = await paymentOrchestrator.createRenewPayment({
           telegramId: ctx.from.id,
           serviceId: state.serviceId,
           gateway,
-          promoCode: state.promoCode,
         });
 
         if (gateway === PaymentGateway.WALLET) {

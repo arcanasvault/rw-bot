@@ -57,6 +57,14 @@ function asPositiveInt(input: string | undefined): number | null {
   return value;
 }
 
+function asPositiveFloat(input: string | undefined): number | null {
+  const value = Number.parseFloat(input ?? '');
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return value;
+}
+
 function parseListLimit(input: string | undefined, fallback = 20): number {
   const value = Number(input);
   if (!Number.isInteger(value) || value <= 0) {
@@ -132,12 +140,16 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         '/manuals',
         '/broadcast <message>',
         '/plans',
-        '/addplan name|trafficGb|durationDays|priceTomans',
-        '/editplan id|name|trafficGb|durationDays|priceTomans|active0or1',
+        '/addplan',
+        '/editplan',
         '/delplan <plan_id>',
         '/settest <traffic_gb> <days>',
+        '/settestinternalsquad <id(s)>',
         '/testtoggle <on|off>',
         '/resettest <tg_id>',
+        '/resetalltests',
+        '/togglemanual',
+        '/toggletetra',
         '/setnotify <days> <gb>',
         '/setaffiliate <fixed|percent> <value>',
         '/promoadd code|percent|fixed|uses',
@@ -382,7 +394,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       plans
         .map(
           (p) =>
-            `${p.id}\n${p.name} | ${p.trafficGb}GB | ${p.durationDays} روز | ${formatTomans(p.priceTomans)} | فعال: ${p.isActive ? 'بله' : 'خیر'}`,
+            `${p.id}\n${p.displayName} (${p.name}) | ${p.trafficGb}GB | ${p.durationDays} روز | ${formatTomans(p.priceTomans)} | squad: ${p.internalSquadId} | فعال: ${p.isActive ? 'بله' : 'خیر'}`,
         )
         .join('\n\n'),
     );
@@ -520,85 +532,26 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       plans
         .map(
           (p) =>
-            `${p.id}\n${p.name} | ${p.trafficGb}GB | ${p.durationDays} روز | ${formatTomans(p.priceTomans)} | فعال: ${p.isActive ? 'بله' : 'خیر'}`,
+            `${p.id}\n${p.displayName} (${p.name}) | ${p.trafficGb}GB | ${p.durationDays} روز | ${formatTomans(p.priceTomans)} | squad: ${p.internalSquadId} | فعال: ${p.isActive ? 'بله' : 'خیر'}`,
         )
         .join('\n\n'),
     );
   });
 
   bot.command('addplan', async (ctx) => {
-    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+    if (!isAdmin(ctx)) {
       return;
     }
 
-    const payload = getTextAfterCommand(ctx.message.text);
-    const [name, trafficGbRaw, durationDaysRaw, priceRaw] = payload
-      .split('|')
-      .map((x) => x?.trim());
-
-    const trafficGb = asPositiveInt(trafficGbRaw);
-    const durationDays = asPositiveInt(durationDaysRaw);
-    const priceTomans = asPositiveInt(priceRaw);
-
-    if (!name || !trafficGb || !durationDays || !priceTomans) {
-      await ctx.reply('فرمت درست: /addplan name|trafficGb|durationDays|priceTomans');
-      return;
-    }
-
-    try {
-      await prisma.plan.create({
-        data: {
-          name,
-          trafficGb,
-          durationDays,
-          priceTomans,
-          isActive: true,
-        },
-      });
-
-      await ctx.reply('پلن اضافه شد.');
-    } catch {
-      await ctx.reply('ثبت پلن ناموفق بود. ممکن است پلن تکراری باشد.');
-    }
+    await ctx.scene.enter('admin-add-plan-wizard');
   });
 
   bot.command('editplan', async (ctx) => {
-    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+    if (!isAdmin(ctx)) {
       return;
     }
 
-    const payload = getTextAfterCommand(ctx.message.text);
-    const [id, name, trafficGbRaw, durationDaysRaw, priceRaw, activeRaw] = payload
-      .split('|')
-      .map((x) => x?.trim());
-
-    const trafficGb = asPositiveInt(trafficGbRaw);
-    const durationDays = asPositiveInt(durationDaysRaw);
-    const priceTomans = asPositiveInt(priceRaw);
-    const isActive = activeRaw === '1';
-
-    if (
-      !id ||
-      !name ||
-      !trafficGb ||
-      !durationDays ||
-      !priceTomans ||
-      !['0', '1'].includes(activeRaw ?? '')
-    ) {
-      await ctx.reply('فرمت درست: /editplan id|name|trafficGb|durationDays|priceTomans|active0or1');
-      return;
-    }
-
-    try {
-      await prisma.plan.update({
-        where: { id },
-        data: { name, trafficGb, durationDays, priceTomans, isActive },
-      });
-
-      await ctx.reply('پلن ویرایش شد.');
-    } catch {
-      await ctx.reply('ویرایش پلن ناموفق بود.');
-    }
+    await ctx.scene.enter('admin-edit-plan-wizard');
   });
 
   bot.command('delplan', async (ctx) => {
@@ -626,8 +579,8 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     const [trafficGbRaw, daysRaw] = getArgs(ctx.message.text);
-    const trafficGb = asPositiveInt(trafficGbRaw);
-    const days = asPositiveInt(daysRaw);
+    const trafficGb = asPositiveFloat(trafficGbRaw);
+    const days = asPositiveFloat(daysRaw);
 
     if (!trafficGb || !days) {
       await ctx.reply('فرمت درست: /settest <traffic_gb> <days>');
@@ -637,17 +590,37 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await prisma.setting.upsert({
       where: { id: 1 },
       update: {
-        testTrafficBytes: BigInt(trafficGb * 1024 * 1024 * 1024),
+        testTrafficBytes: BigInt(Math.floor(trafficGb * 1024 * 1024 * 1024)),
         testDurationDays: days,
       },
       create: {
         id: 1,
-        testTrafficBytes: BigInt(trafficGb * 1024 * 1024 * 1024),
+        testTrafficBytes: BigInt(Math.floor(trafficGb * 1024 * 1024 * 1024)),
         testDurationDays: days,
       },
     });
 
     await ctx.reply('تنظیمات سرویس تست بروزرسانی شد.');
+  });
+
+  bot.command('settestinternalsquad', async (ctx) => {
+    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+      return;
+    }
+
+    const squadIds = getArgs(ctx.message.text).join(' ').replace(/\s+/g, '');
+    if (!squadIds) {
+      await ctx.reply('فرمت درست: /settestinternalsquad <id(s)>');
+      return;
+    }
+
+    await prisma.setting.upsert({
+      where: { id: 1 },
+      update: { testInternalSquadId: squadIds },
+      create: { id: 1, testInternalSquadId: squadIds },
+    });
+
+    await ctx.reply('internal squad تست بروزرسانی شد.');
   });
 
   bot.command('testtoggle', async (ctx) => {
@@ -687,6 +660,58 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     await ctx.reply('وضعیت تست کاربر ریست شد.');
+  });
+
+  bot.command('resetalltests', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const result = await prisma.user.updateMany({
+      data: { usedTestSubscription: false },
+    });
+
+    await ctx.reply(`وضعیت تست همه کاربران ریست شد. تعداد: ${result.count}`);
+  });
+
+  bot.command('togglemanual', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
+
+    const updated = await prisma.setting.update({
+      where: { id: 1 },
+      data: { enableManualPayment: !setting.enableManualPayment },
+    });
+
+    await ctx.reply(
+      updated.enableManualPayment ? 'پرداخت دستی فعال شد.' : 'پرداخت دستی غیرفعال شد.',
+    );
+  });
+
+  bot.command('toggletetra', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
+
+    const updated = await prisma.setting.update({
+      where: { id: 1 },
+      data: { enableTetra98: !setting.enableTetra98 },
+    });
+
+    await ctx.reply(updated.enableTetra98 ? 'پرداخت تترا98 فعال شد.' : 'پرداخت تترا98 غیرفعال شد.');
   });
 
   bot.command('setnotify', async (ctx) => {

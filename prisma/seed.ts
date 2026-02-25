@@ -23,14 +23,24 @@ async function main(): Promise<void> {
     update: {
       manualCardNumber: process.env.MANUAL_CARD_NUMBER ?? null,
       supportHandle: process.env.ADMIN_TG_HANDLE ?? null,
+      enableManualPayment: true,
+      enableTetra98: true,
+      enablePromos: false,
+      enableReferrals: false,
+      testInternalSquadId: process.env.DEFAULT_INTERNAL_SQUAD_ID ?? null,
     },
     create: {
       id: 1,
       testEnabled: true,
       testTrafficBytes: BigInt(5 * 1024 * 1024 * 1024),
       testDurationDays: 1,
+      testInternalSquadId: process.env.DEFAULT_INTERNAL_SQUAD_ID ?? null,
       notifyDaysLeft: 3,
       notifyGbLeft: 2,
+      enableManualPayment: true,
+      enableTetra98: true,
+      enablePromos: false,
+      enableReferrals: false,
       affiliateRewardType: 'FIXED',
       affiliateRewardValue: 15000,
       manualCardNumber: process.env.MANUAL_CARD_NUMBER ?? null,
@@ -39,9 +49,30 @@ async function main(): Promise<void> {
   });
 
   const defaultPlans = [
-    { name: 'اقتصادی', trafficGb: 50, durationDays: 30, priceTomans: 70000 },
-    { name: 'حرفه ای', trafficGb: 120, durationDays: 30, priceTomans: 130000 },
-    { name: 'نامحدود یک ماهه', trafficGb: 300, durationDays: 30, priceTomans: 220000 },
+    {
+      name: 'economy',
+      displayName: 'پلن اقتصادی',
+      trafficGb: 50,
+      durationDays: 30,
+      priceTomans: 70000,
+      internalSquadId: process.env.DEFAULT_INTERNAL_SQUAD_ID ?? '1',
+    },
+    {
+      name: 'pro',
+      displayName: 'پلن حرفه ای',
+      trafficGb: 120,
+      durationDays: 30,
+      priceTomans: 130000,
+      internalSquadId: process.env.DEFAULT_INTERNAL_SQUAD_ID ?? '1',
+    },
+    {
+      name: 'unlimited-30d',
+      displayName: 'پلن نامحدود یک ماهه',
+      trafficGb: 300,
+      durationDays: 30,
+      priceTomans: 220000,
+      internalSquadId: process.env.DEFAULT_INTERNAL_SQUAD_ID ?? '1',
+    },
   ];
 
   for (const plan of defaultPlans) {
@@ -54,7 +85,9 @@ async function main(): Promise<void> {
         },
       },
       update: {
+        displayName: plan.displayName,
         priceTomans: plan.priceTomans,
+        internalSquadId: plan.internalSquadId,
         isActive: true,
       },
       create: plan,

@@ -86,6 +86,7 @@ export interface CreateRemnaUserInput {
   trafficLimitBytes: number;
   expireAt: Date;
   telegramId: number;
+  activeInternalSquads?: number[];
 }
 
 export interface UpdateRemnaUserInput {
@@ -97,17 +98,20 @@ export interface UpdateRemnaUserInput {
 
 export class RemnawaveService {
   async createUser(input: CreateRemnaUserInput) {
+    const requestPayload = {
+      username: input.username,
+      trafficLimitBytes: input.trafficLimitBytes,
+      expireAt: input.expireAt,
+      telegramId: input.telegramId,
+      status: USERS_STATUS.ACTIVE,
+      trafficLimitStrategy: RESET_PERIODS.NO_RESET,
+      activeInternalSquads: input.activeInternalSquads,
+    } as CreateUserCommand.Request & { activeInternalSquads?: number[] };
+
     const response = await execCommand<CreateUserCommand.Response>({
       method: CreateUserCommand.endpointDetails.REQUEST_METHOD,
       url: CreateUserCommand.url,
-      data: {
-        username: input.username,
-        trafficLimitBytes: input.trafficLimitBytes,
-        expireAt: input.expireAt,
-        telegramId: input.telegramId,
-        status: USERS_STATUS.ACTIVE,
-        trafficLimitStrategy: RESET_PERIODS.NO_RESET,
-      } satisfies CreateUserCommand.Request,
+      data: requestPayload,
       schema: CreateUserCommand.ResponseSchema,
     });
 

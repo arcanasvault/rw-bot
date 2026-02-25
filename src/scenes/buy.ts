@@ -23,7 +23,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
     const buttons = plans.map((plan) =>
       Markup.button.callback(
-        `${plan.name} | ${plan.trafficGb}GB | ${plan.durationDays} روز | ${formatTomans(plan.priceTomans)}`,
+        `${plan.displayName} | ${plan.trafficGb}GB | ${plan.durationDays} روز | ${formatTomans(plan.priceTomans)}`,
         `buy_plan:${plan.id}`,
       ),
     );
@@ -68,26 +68,26 @@ const scene = new Scenes.WizardScene<BotContext>(
 
     const state = ctx.wizard.state as BuyWizardState;
     state.serviceName = raw;
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: {
+        enableTetra98: true,
+        enableManualPayment: true,
+      },
+    });
+    const tetraEnabled = setting?.enableTetra98 ?? true;
+    const manualEnabled = setting?.enableManualPayment ?? true;
 
-    await ctx.reply('اگر کد تخفیف دارید ارسال کنید. در غیر اینصورت بنویسید: ندارم');
-    return ctx.wizard.next();
-  },
-  async (ctx) => {
-    if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('متن بفرستید.');
-      return;
+    const paymentButtons = [[Markup.button.callback('پرداخت از کیف پول', 'buy_gateway:wallet')]];
+    if (tetraEnabled) {
+      paymentButtons.push([Markup.button.callback('پرداخت آنلاین تترا98', 'buy_gateway:tetra')]);
+    }
+    if (manualEnabled) {
+      paymentButtons.push([Markup.button.callback('پرداخت کارت به کارت', 'buy_gateway:manual')]);
     }
 
-    const state = ctx.wizard.state as BuyWizardState;
-    const text = ctx.message.text.trim();
-    state.promoCode = text === 'ندارم' ? undefined : text;
-
     await ctx.reply(`مبلغ این خرید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('پرداخت از کیف پول', 'buy_gateway:wallet')],
-        [Markup.button.callback('پرداخت آنلاین تترا98', 'buy_gateway:tetra')],
-        [Markup.button.callback('پرداخت کارت به کارت', 'buy_gateway:manual')],
-      ]).reply_markup,
+      reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
     });
 
     return ctx.wizard.next();
@@ -112,6 +112,27 @@ const scene = new Scenes.WizardScene<BotContext>(
 
       const selected = ctx.match[1];
       const gateway = gatewayMap[selected];
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: {
+          enableTetra98: true,
+          enableManualPayment: true,
+        },
+      });
+      const tetraEnabled = setting?.enableTetra98 ?? true;
+      const manualEnabled = setting?.enableManualPayment ?? true;
+
+      if (gateway === PaymentGateway.TETRA98 && !tetraEnabled) {
+        await ctx.answerCbQuery();
+        await ctx.reply('No payment methods available');
+        return ctx.scene.leave();
+      }
+
+      if (gateway === PaymentGateway.MANUAL && !manualEnabled) {
+        await ctx.answerCbQuery();
+        await ctx.reply('No payment methods available');
+        return ctx.scene.leave();
+      }
 
       try {
         const payment = await paymentOrchestrator.createPurchasePayment({
@@ -119,7 +140,6 @@ const scene = new Scenes.WizardScene<BotContext>(
           planId: state.planId,
           serviceName: state.serviceName,
           gateway,
-          promoCode: state.promoCode,
         });
 
         if (gateway === PaymentGateway.WALLET) {

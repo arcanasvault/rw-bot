@@ -68,9 +68,11 @@ model User {
 model Plan {
   id           String    @id @default(cuid())
   name         String
-  trafficGb    Int
-  durationDays Int
+  displayName  String
+  trafficGb    Float
+  durationDays Float
   priceTomans  Int
+  internalSquadId String
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -184,9 +186,14 @@ model Setting {
   id                  Int                 @id @default(1)
   testEnabled         Boolean             @default(true)
   testTrafficBytes    BigInt              @default(1073741824)
-  testDurationDays    Int                 @default(1)
+  testDurationDays    Float               @default(1)
+  testInternalSquadId String?
   notifyDaysLeft      Int                 @default(3)
   notifyGbLeft        Int                 @default(2)
+  enableManualPayment Boolean             @default(true)
+  enableTetra98       Boolean             @default(true)
+  enablePromos        Boolean             @default(false)
+  enableReferrals     Boolean             @default(false)
   affiliateRewardType AffiliateRewardType @default(FIXED)
   affiliateRewardValue Int                @default(10000)
   manualCardNumber    String?
