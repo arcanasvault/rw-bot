@@ -36,6 +36,7 @@ run_compose() {
 }
 
 detect_compose() {
+  # Prefer modern 'docker compose' (v2 plugin)
   if docker compose version >/dev/null 2>&1; then
     DOCKER_CMD="docker"
     COMPOSE_CMD="$DOCKER_CMD compose"
@@ -48,17 +49,20 @@ detect_compose() {
     return
   fi
 
+  # Fallback to legacy (but we try to avoid it)
   if command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
+    warn "Using legacy docker-compose v1 – consider upgrading to v2 plugin for compatibility."
     return
   fi
 
   if [[ -n "$SUDO" ]] && command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD="$SUDO docker-compose"
+    warn "Using legacy docker-compose v1 – consider upgrading to v2 plugin for compatibility."
     return
   fi
 
-  die "Docker Compose not found."
+  die "Docker Compose not found. Please install docker-compose-plugin."
 }
 
 require_cmd() {
@@ -66,27 +70,53 @@ require_cmd() {
 }
 
 install_docker_if_needed() {
-  if command -v docker >/dev/null 2>&1 && (docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1); then
-    log "Docker and Compose already installed."
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    log "Docker and Compose v2 already installed."
     detect_compose
     return
   fi
 
   command -v apt-get >/dev/null 2>&1 || die "This installer currently supports Ubuntu/Debian with apt-get."
 
-  log "Installing Docker and Docker Compose plugin..."
+  log "Installing latest Docker Engine and Compose v2 plugin from official repo..."
+
+  # Uninstall any old/conflicting packages
+  $SUDO apt-get remove -y docker docker-engine docker.io containerd runc podman-docker docker-compose docker-compose-v2 || true
+
+  # Install dependencies
   $SUDO apt-get update -y
   $SUDO apt-get install -y ca-certificates curl gnupg lsb-release
-  $SUDO apt-get install -y docker.io docker-compose-plugin
+
+  # Add Docker's official GPG key
+  $SUDO mkdir -p /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
+
+  # Add Docker repo
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | \
+    $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  # Update and install
+  $SUDO apt-get update -y
+  $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # Enable and start Docker
   $SUDO systemctl enable docker
   $SUDO systemctl start docker
 
+  # Add current user to docker group (non-root access)
   if [[ -n "${SUDO_USER:-}" ]]; then
     $SUDO usermod -aG docker "$SUDO_USER" || true
-    warn "User $SUDO_USER added to docker group. You may need to logout/login once."
+    warn "User $SUDO_USER added to docker group. Log out and back in (or 'newgrp docker') for non-sudo docker commands."
+  elif [[ -n "${USER:-}" ]]; then
+    $SUDO usermod -aG docker "$USER" || true
+    warn "User $USER added to docker group. Log out and back in for non-sudo docker."
   fi
 
   detect_compose
+  log "Docker and Compose v2 installation complete."
 }
 
 upsert_env() {
@@ -157,12 +187,12 @@ ensure_env_file() {
     cp "$PROJECT_DIR/.env.example" "$env_file"
   fi
 
-  prompt_var "APP_URL" "Public HTTPS domain for webhook (without trailing slash)"
+  prompt_var "APP_URL" "Public HTTPS domain for webhook (without trailing slash, e.g. https://bot.example.com)"
   prompt_var "WEBHOOK_PATH" "Telegram webhook path" "/telegram/webhook"
   prompt_var "BOT_TOKEN" "Telegram BOT_TOKEN" "" true
   prompt_var "BOT_USERNAME" "Telegram bot username (without @)"
   prompt_var "ADMIN_TG_IDS" "Admin Telegram IDs (comma separated)"
-  prompt_var "ADMIN_TG_HANDLE" "Support/admin Telegram handle (without @ preferred)"
+  prompt_var "ADMIN_TG_HANDLE" "Support/admin Telegram handle (with @ preferred)"
 
   prompt_var "POSTGRES_DB" "Postgres DB name" "vpn_bot"
   prompt_var "POSTGRES_USER" "Postgres username" "vpn_bot"
@@ -202,14 +232,33 @@ show_nginx_hint() {
 
   cat <<NGINX
 
-Nginx reverse proxy hint:
+Important: Telegram webhooks REQUIRE valid HTTPS!
 
+Nginx reverse proxy example (with HTTPS via Certbot/Let's Encrypt):
+
+sudo apt install nginx certbot python3-certbot-nginx -y
+
+Create /etc/nginx/sites-available/bot:
 server {
     listen 80;
+    listen [::]:80;
     server_name ${host};
 
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${host};
+
+    ssl_certificate /etc/letsencrypt/live/${host}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${host}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:$(read_env_value APP_PORT);
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -218,8 +267,12 @@ server {
     }
 }
 
-After Nginx + TLS setup, webhook should be:
-  ${app_url}$(read_env_value WEBHOOK_PATH)
+Then: sudo ln -s /etc/nginx/sites-available/bot /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+Obtain cert: sudo certbot --nginx -d ${host}
+
+Webhook URL to set in BotFather: ${app_url}$(read_env_value WEBHOOK_PATH)
 
 NGINX
 }
@@ -235,7 +288,7 @@ install_setup() {
   run_compose up -d --build
 
   log "Waiting for DB to become healthy"
-  sleep 5
+  sleep 10  # Increased slightly for reliability
 
   log "Running Prisma generate"
   run_compose exec -T app pnpm prisma generate
@@ -249,7 +302,7 @@ install_setup() {
   fi
 
   show_nginx_hint
-  log "Install/Setup completed"
+  log "Install/Setup completed. If using non-root, run 'newgrp docker' or relogin."
 }
 
 start_restart() {
