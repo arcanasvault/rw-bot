@@ -27,8 +27,8 @@ export function createBot(): Telegraf<BotContext> {
 
   bot.use(
     rateLimit({
-      window: 3000,
-      limit: 1,
+      window: 1000,
+      limit: 4,
       onLimitExceeded: (ctx) => {
         void ctx.reply('درخواست های شما بیش از حد سریع است. چند ثانیه صبر کنید.');
       },
@@ -77,6 +77,10 @@ export function createBot(): Telegraf<BotContext> {
   bot.action('wallet_charge', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.scene.enter('wallet-charge-wizard');
+  });
+
+  bot.on('callback_query', async (ctx) => {
+    await ctx.answerCbQuery('این گزینه منقضی شده یا نامعتبر است.').catch(() => undefined);
   });
 
   bot.catch((error) => {

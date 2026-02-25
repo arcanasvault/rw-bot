@@ -8,3 +8,4 @@ dist
 OUTPUT.md
 backups
 *.log
+nginx/certs

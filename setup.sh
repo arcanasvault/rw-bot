@@ -4,6 +4,11 @@ set -Eeuo pipefail
 APP_NAME="remnawave-vpn-bot"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="$PROJECT_DIR/backups"
+NGINX_DIR="$PROJECT_DIR/nginx"
+NGINX_CONF_DIR="$NGINX_DIR/conf.d"
+NGINX_CERTS_DIR="$NGINX_DIR/certs"
+NGINX_WEBROOT_DIR="$NGINX_DIR/www"
+CERT_RENEW_LOG="$PROJECT_DIR/logs/cert-renew.log"
 
 if [[ "${EUID}" -ne 0 ]]; then
   SUDO="sudo"
@@ -11,8 +16,7 @@ else
   SUDO=""
 fi
 
-COMPOSE_CMD=""
-DOCKER_CMD="docker"
+COMPOSE_MODE=""
 
 log() {
   printf "\n[%s] %s\n" "$APP_NAME" "$*"
@@ -27,96 +31,72 @@ die() {
   exit 1
 }
 
-run_compose() {
-  if [[ -z "$COMPOSE_CMD" ]]; then
-    detect_compose
+run_docker() {
+  if [[ -n "$SUDO" ]]; then
+    $SUDO docker "$@"
+  else
+    docker "$@"
   fi
-
-  (cd "$PROJECT_DIR" && eval "$COMPOSE_CMD" "$@")
 }
 
 detect_compose() {
-  # Prefer modern 'docker compose' (v2 plugin)
-  if docker compose version >/dev/null 2>&1; then
-    DOCKER_CMD="docker"
-    COMPOSE_CMD="$DOCKER_CMD compose"
+  if run_docker compose version >/dev/null 2>&1; then
+    COMPOSE_MODE="plugin"
     return
   fi
 
-  if [[ -n "$SUDO" ]] && $SUDO docker compose version >/dev/null 2>&1; then
-    DOCKER_CMD="$SUDO docker"
-    COMPOSE_CMD="$DOCKER_CMD compose"
-    return
-  fi
-
-  # Fallback to legacy (but we try to avoid it)
   if command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="docker-compose"
-    warn "Using legacy docker-compose v1 – consider upgrading to v2 plugin for compatibility."
+    COMPOSE_MODE="legacy"
     return
   fi
 
-  if [[ -n "$SUDO" ]] && command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_CMD="$SUDO docker-compose"
-    warn "Using legacy docker-compose v1 – consider upgrading to v2 plugin for compatibility."
-    return
+  die "Docker Compose not found."
+}
+
+run_compose() {
+  if [[ -z "$COMPOSE_MODE" ]]; then
+    detect_compose
   fi
 
-  die "Docker Compose not found. Please install docker-compose-plugin."
+  if [[ "$COMPOSE_MODE" == "plugin" ]]; then
+    (cd "$PROJECT_DIR" && run_docker compose "$@")
+  else
+    (cd "$PROJECT_DIR" && docker-compose "$@")
+  fi
 }
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Command not found: $1"
 }
 
+install_prerequisites() {
+  command -v apt-get >/dev/null 2>&1 || die "This installer supports Ubuntu/Debian (apt-get) only."
+
+  log "Installing base dependencies"
+  $SUDO apt-get update -y
+  $SUDO apt-get install -y curl git ca-certificates gnupg lsb-release jq openssl
+}
+
 install_docker_if_needed() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    log "Docker and Compose v2 already installed."
+  if command -v docker >/dev/null 2>&1 && (run_docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1); then
+    log "Docker and Compose already installed."
     detect_compose
     return
   fi
 
-  command -v apt-get >/dev/null 2>&1 || die "This installer currently supports Ubuntu/Debian with apt-get."
+  install_prerequisites
 
-  log "Installing latest Docker Engine and Compose v2 plugin from official repo..."
-
-  # Uninstall any old/conflicting packages
-  $SUDO apt-get remove -y docker docker-engine docker.io containerd runc podman-docker docker-compose docker-compose-v2 || true
-
-  # Install dependencies
-  $SUDO apt-get update -y
-  $SUDO apt-get install -y ca-certificates curl gnupg lsb-release
-
-  # Add Docker's official GPG key
-  $SUDO mkdir -p /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | $SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
-
-  # Add Docker repo
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(lsb_release -cs) stable" | \
-    $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-  # Update and install
-  $SUDO apt-get update -y
-  $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  # Enable and start Docker
+  log "Installing Docker and Docker Compose plugin"
+  $SUDO apt-get install -y docker.io docker-compose-plugin
   $SUDO systemctl enable docker
   $SUDO systemctl start docker
 
-  # Add current user to docker group (non-root access)
   if [[ -n "${SUDO_USER:-}" ]]; then
     $SUDO usermod -aG docker "$SUDO_USER" || true
-    warn "User $SUDO_USER added to docker group. Log out and back in (or 'newgrp docker') for non-sudo docker commands."
-  elif [[ -n "${USER:-}" ]]; then
-    $SUDO usermod -aG docker "$USER" || true
-    warn "User $USER added to docker group. Log out and back in for non-sudo docker."
+    warn "User $SUDO_USER added to docker group. You may need to logout/login once."
   fi
 
   detect_compose
-  log "Docker and Compose v2 installation complete."
 }
 
 upsert_env() {
@@ -179,6 +159,33 @@ prompt_var() {
   upsert_env "$key" "$user_input"
 }
 
+is_true_value() {
+  local raw="${1:-}"
+  case "$(echo "$raw" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_webhook_url() {
+  local app_url
+  app_url="$(read_env_value APP_URL)"
+
+  [[ "$app_url" == https://* ]] || die "APP_URL must be HTTPS for Telegram webhook."
+
+  local hostport
+  hostport="${app_url#https://}"
+  hostport="${hostport%%/*}"
+
+  if [[ "$hostport" == *:* ]]; then
+    local port
+    port="${hostport##*:}"
+    if [[ "$port" != "443" && "$port" != "80" && "$port" != "88" && "$port" != "8443" ]]; then
+      die "Webhook port must be 443/80/88/8443. Current APP_URL port: $port"
+    fi
+  fi
+}
+
 ensure_env_file() {
   local env_file="$PROJECT_DIR/.env"
 
@@ -187,17 +194,18 @@ ensure_env_file() {
     cp "$PROJECT_DIR/.env.example" "$env_file"
   fi
 
-  prompt_var "APP_URL" "Public HTTPS domain for webhook (without trailing slash, e.g. https://bot.example.com)"
+  prompt_var "APP_URL" "Public HTTPS URL for webhook (no trailing slash)"
   prompt_var "WEBHOOK_PATH" "Telegram webhook path" "/telegram/webhook"
+  prompt_var "WEBHOOK_SET_RETRIES" "Webhook setup retries" "3"
   prompt_var "BOT_TOKEN" "Telegram BOT_TOKEN" "" true
   prompt_var "BOT_USERNAME" "Telegram bot username (without @)"
   prompt_var "ADMIN_TG_IDS" "Admin Telegram IDs (comma separated)"
-  prompt_var "ADMIN_TG_HANDLE" "Support/admin Telegram handle (with @ preferred)"
+  prompt_var "ADMIN_TG_HANDLE" "Support/admin Telegram handle"
 
   prompt_var "POSTGRES_DB" "Postgres DB name" "vpn_bot"
   prompt_var "POSTGRES_USER" "Postgres username" "vpn_bot"
   prompt_var "POSTGRES_PASSWORD" "Postgres password" "vpn_bot_password" true
-  prompt_var "POSTGRES_PORT" "Postgres port exposed on host" "5432"
+  prompt_var "POSTGRES_PORT" "Postgres host port" "5432"
 
   local pg_db pg_user pg_pass
   pg_db="$(read_env_value POSTGRES_DB)"
@@ -205,9 +213,9 @@ ensure_env_file() {
   pg_pass="$(read_env_value POSTGRES_PASSWORD)"
 
   upsert_env "DATABASE_URL" "postgresql://${pg_user}:${pg_pass}@db:5432/${pg_db}?schema=public"
-  prompt_var "RUN_SEED" "Run seed at container start? (true/false)" "false"
+  prompt_var "RUN_SEED" "Run seed at startup? (true/false)" "false"
 
-  prompt_var "REMNAWAVE_URL" "RemnaWave panel URL (e.g. https://panel.example.com)"
+  prompt_var "REMNAWAVE_URL" "RemnaWave panel URL"
   prompt_var "REMNAWAVE_TOKEN" "RemnaWave API token" "" true
 
   prompt_var "TETRA98_API_KEY" "Tetra98 API key" "" true
@@ -219,46 +227,288 @@ ensure_env_file() {
   prompt_var "PORT" "Container app port" "3000"
   prompt_var "APP_PORT" "Host app port mapping" "3000"
 
+  prompt_var "ENABLE_NGINX" "Enable bundled NGINX + Certbot? (true/false)" "false"
+  prompt_var "DOMAIN" "Domain for NGINX/HTTPS (if enabled)" "example.com"
+  prompt_var "LETSENCRYPT_EMAIL" "Let's Encrypt email (if enabled)" "admin@example.com"
+
   chmod 700 "$env_file"
   log ".env secured with chmod 700"
 }
 
-show_nginx_hint() {
-  ensure_env_exists
-  local app_url host
-  app_url="$(read_env_value APP_URL)"
-  host="${app_url#https://}"
-  host="${host#http://}"
+ensure_nginx_dirs() {
+  mkdir -p "$NGINX_CONF_DIR" "$NGINX_CERTS_DIR" "$NGINX_WEBROOT_DIR" "$PROJECT_DIR/logs"
+}
 
-  cat <<NGINX
-
-Important: Telegram webhooks REQUIRE valid HTTPS!
-
-Nginx reverse proxy example (with HTTPS via Certbot/Let's Encrypt):
-
-sudo apt install nginx certbot python3-certbot-nginx -y
-
-Create /etc/nginx/sites-available/bot:
+write_nginx_http_config() {
+  local domain="$1"
+  cat >"$NGINX_CONF_DIR/default.conf" <<NGINX
 server {
     listen 80;
-    listen [::]:80;
-    server_name ${host};
+    server_name ${domain};
 
-    return 301 https://\$host\$request_uri;
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://app:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX
+}
+
+write_nginx_https_config() {
+  local domain="$1"
+  cat >"$NGINX_CONF_DIR/default.conf" <<NGINX
+server {
+    listen 80;
+    server_name ${domain};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 server {
     listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name ${host};
+    server_name ${domain};
 
-    ssl_certificate /etc/letsencrypt/live/${host}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${host}/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
 
     location / {
-        proxy_pass http://127.0.0.1:$(read_env_value APP_PORT);
+        proxy_pass http://app:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX
+}
+
+obtain_letsencrypt_certificate() {
+  local domain="$1"
+  local email="$2"
+
+  run_docker run --rm \
+    -v "$NGINX_CERTS_DIR:/etc/letsencrypt" \
+    -v "$NGINX_WEBROOT_DIR:/var/www/certbot" \
+    certbot/certbot certonly \
+    --webroot -w /var/www/certbot \
+    -d "$domain" \
+    --email "$email" \
+    --agree-tos \
+    --no-eff-email \
+    --non-interactive
+}
+
+create_self_signed_certificate() {
+  local domain="$1"
+  local cert_dir="$NGINX_CERTS_DIR/live/$domain"
+
+  mkdir -p "$cert_dir"
+  openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+    -subj "/CN=$domain" \
+    -keyout "$cert_dir/privkey.pem" \
+    -out "$cert_dir/fullchain.pem"
+}
+
+reload_nginx_service() {
+  if run_compose --profile nginx exec -T nginx nginx -s reload >/dev/null 2>&1; then
+    return
+  fi
+
+  run_compose --profile nginx restart nginx
+}
+
+setup_cert_renew_cron() {
+  mkdir -p "$(dirname "$CERT_RENEW_LOG")"
+  local cron_line="17 3 * * * cd $PROJECT_DIR && bash scripts/renew-certs.sh >> $CERT_RENEW_LOG 2>&1"
+  local current
+  current="$(crontab -l 2>/dev/null || true)"
+
+  if echo "$current" | grep -F "$PROJECT_DIR && bash scripts/renew-certs.sh" >/dev/null 2>&1; then
+    log "Cert renew cron already exists"
+    return
+  fi
+
+  (echo "$current"; echo "$cron_line") | crontab -
+  log "Added daily cert renewal cron"
+}
+
+setup_nginx_certbot() {
+  ensure_env_exists
+  local domain email
+  domain="$(read_env_value DOMAIN)"
+  email="$(read_env_value LETSENCRYPT_EMAIL)"
+
+  [[ -n "$domain" ]] || die "DOMAIN is required for NGINX setup"
+  [[ -n "$email" ]] || die "LETSENCRYPT_EMAIL is required for NGINX setup"
+
+  ensure_nginx_dirs
+  write_nginx_http_config "$domain"
+
+  log "Starting docker stack with nginx profile"
+  run_compose --profile nginx up -d --build db app nginx
+  sleep 5
+
+  log "Requesting Let's Encrypt certificate for $domain"
+  if obtain_letsencrypt_certificate "$domain" "$email"; then
+    log "Let's Encrypt certificate issued"
+  else
+    warn "Let's Encrypt failed. Creating self-signed fallback certificate"
+    create_self_signed_certificate "$domain"
+    warn "Self-signed certificate is not recommended for Telegram production webhooks"
+  fi
+
+  write_nginx_https_config "$domain"
+  reload_nginx_service
+  setup_cert_renew_cron
+
+  upsert_env "APP_URL" "https://$domain"
+  upsert_env "ENABLE_NGINX" "true"
+
+  log "NGINX + HTTPS setup complete"
+}
+
+check_app_health() {
+  local app_port
+  app_port="$(read_env_value APP_PORT)"
+  app_port="${app_port:-3000}"
+
+  local i
+  for i in {1..20}; do
+    if curl -fsS "http://127.0.0.1:${app_port}/health" >/dev/null 2>&1; then
+      log "App health check passed"
+      return 0
+    fi
+    sleep 2
+  done
+
+  warn "App health check failed on http://127.0.0.1:${app_port}/health"
+  return 1
+}
+
+set_webhook() {
+  ensure_env_exists
+  validate_webhook_url
+
+  local bot_token app_url webhook_path webhook_url
+  bot_token="$(read_env_value BOT_TOKEN)"
+  app_url="$(read_env_value APP_URL)"
+  webhook_path="$(read_env_value WEBHOOK_PATH)"
+
+  app_url="${app_url%/}"
+  webhook_url="${app_url}${webhook_path}"
+
+  log "Setting Telegram webhook to $webhook_url"
+
+  local set_resp
+  set_resp="$(curl -fsS -X POST "https://api.telegram.org/bot${bot_token}/setWebhook" \
+    --data-urlencode "url=${webhook_url}" \
+    --data-urlencode "drop_pending_updates=false" \
+    --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]")" || {
+      warn "setWebhook request failed"
+      return 1
+    }
+
+  if command -v jq >/dev/null 2>&1; then
+    local ok description
+    ok="$(echo "$set_resp" | jq -r '.ok')"
+    description="$(echo "$set_resp" | jq -r '.description')"
+    if [[ "$ok" != "true" ]]; then
+      warn "setWebhook failed: $description"
+      return 1
+    fi
+    log "setWebhook success: $description"
+  else
+    log "setWebhook response: $set_resp"
+  fi
+
+  return 0
+}
+
+verify_webhook_info() {
+  ensure_env_exists
+  local bot_token
+  bot_token="$(read_env_value BOT_TOKEN)"
+
+  local info_resp
+  info_resp="$(curl -fsS "https://api.telegram.org/bot${bot_token}/getWebhookInfo")" || {
+    warn "getWebhookInfo request failed"
+    return 1
+  }
+
+  if command -v jq >/dev/null 2>&1; then
+    local ok url pending last_error
+    ok="$(echo "$info_resp" | jq -r '.ok')"
+    url="$(echo "$info_resp" | jq -r '.result.url')"
+    pending="$(echo "$info_resp" | jq -r '.result.pending_update_count')"
+    last_error="$(echo "$info_resp" | jq -r '.result.last_error_message // empty')"
+
+    if [[ "$ok" != "true" ]]; then
+      warn "getWebhookInfo failed"
+      return 1
+    fi
+
+    log "Webhook info: url=$url pending_updates=$pending"
+    if [[ -n "$last_error" ]]; then
+      warn "Webhook last_error_message: $last_error"
+    fi
+  else
+    log "Webhook info response: $info_resp"
+  fi
+
+  return 0
+}
+
+run_migrations() {
+  log "Running Prisma generate"
+  run_compose exec -T app pnpm prisma generate
+
+  log "Applying Prisma migrations"
+  run_compose exec -T app pnpm prisma migrate deploy
+
+  if is_true_value "$(read_env_value RUN_SEED)"; then
+    log "Running seed"
+    run_compose exec -T app pnpm db:seed
+  fi
+}
+
+show_nginx_hint() {
+  ensure_env_exists
+  local app_url
+  app_url="$(read_env_value APP_URL)"
+
+  cat <<TXT
+
+Nginx reverse proxy hint (if you use host NGINX):
+
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -267,14 +517,9 @@ server {
     }
 }
 
-Then: sudo ln -s /etc/nginx/sites-available/bot /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-Obtain cert: sudo certbot --nginx -d ${host}
-
-Webhook URL to set in BotFather: ${app_url}$(read_env_value WEBHOOK_PATH)
-
-NGINX
+Current APP_URL: $app_url
+Webhook path: $(read_env_value WEBHOOK_PATH)
+TXT
 }
 
 install_setup() {
@@ -284,37 +529,49 @@ install_setup() {
 
   ensure_env_file
 
-  log "Building and starting containers"
-  run_compose up -d --build
+  local enable_nginx
+  enable_nginx="$(read_env_value ENABLE_NGINX)"
 
-  log "Waiting for DB to become healthy"
-  sleep 10  # Increased slightly for reliability
-
-  log "Running Prisma generate"
-  run_compose exec -T app pnpm prisma generate
-
-  log "Applying Prisma migrations"
-  run_compose exec -T app pnpm prisma migrate deploy
-
-  if [[ "$(read_env_value RUN_SEED)" == "true" ]]; then
-    log "Running seed"
-    run_compose exec -T app pnpm db:seed
+  if is_true_value "$enable_nginx"; then
+    ensure_nginx_dirs
+    run_compose --profile nginx up -d --build db app nginx
+  else
+    run_compose up -d --build db app
   fi
 
+  sleep 5
+  run_migrations
+
+  if is_true_value "$enable_nginx"; then
+    setup_nginx_certbot
+  fi
+
+  check_app_health || true
+  set_webhook || true
+  verify_webhook_info || true
   show_nginx_hint
-  log "Install/Setup completed. If using non-root, run 'newgrp docker' or relogin."
+
+  log "Install/Setup completed"
 }
 
 start_restart() {
   detect_compose
-  log "Starting/restarting services"
-  run_compose up -d --build
+  if is_true_value "$(read_env_value ENABLE_NGINX)"; then
+    run_compose --profile nginx up -d --build
+  else
+    run_compose up -d --build
+  fi
+
+  check_app_health || true
 }
 
 stop_services() {
   detect_compose
-  log "Stopping services"
-  run_compose stop
+  if is_true_value "$(read_env_value ENABLE_NGINX)"; then
+    run_compose --profile nginx stop
+  else
+    run_compose stop
+  fi
 }
 
 update_project() {
@@ -324,23 +581,26 @@ update_project() {
   log "Pulling latest code"
   (cd "$PROJECT_DIR" && git pull --rebase --autostash)
 
-  log "Rebuilding and restarting"
-  run_compose up -d --build
-
-  log "Applying migrations"
-  run_compose exec -T app pnpm prisma migrate deploy
+  start_restart
+  run_migrations
+  set_webhook || true
+  verify_webhook_info || true
 }
 
 show_logs() {
   detect_compose
-  read -r -p "Service name (app/db, default app): " service
+  read -r -p "Service name (app/db/nginx, default app): " service
   service="${service:-app}"
 
-  if [[ "$service" != "app" && "$service" != "db" ]]; then
-    die "Invalid service. Use app or db."
+  if [[ "$service" != "app" && "$service" != "db" && "$service" != "nginx" ]]; then
+    die "Invalid service. Use app, db, or nginx."
   fi
 
-  run_compose logs -f --tail=200 "$service"
+  if [[ "$service" == "nginx" ]]; then
+    run_compose --profile nginx logs -f --tail=200 "$service"
+  else
+    run_compose logs -f --tail=200 "$service"
+  fi
 }
 
 backup_db() {
@@ -391,8 +651,16 @@ uninstall_stack() {
     return
   }
 
-  run_compose down -v --remove-orphans
+  run_compose --profile nginx down -v --remove-orphans
   log "Stack removed"
+}
+
+manual_nginx_setup() {
+  install_docker_if_needed
+  ensure_env_file
+  setup_nginx_certbot
+  set_webhook || true
+  verify_webhook_info || true
 }
 
 print_menu() {
@@ -410,13 +678,15 @@ print_menu() {
 7) Restore DB
 8) Uninstall (remove containers + volumes)
 9) Exit
+10) Setup NGINX + Certbot (optional)
 MENU
 }
 
+# User-editable section: menu dispatcher
 main_loop() {
   while true; do
     print_menu
-    read -r -p "Select an option [1-9]: " choice
+    read -r -p "Select an option [1-10]: " choice
 
     case "$choice" in
       1) install_setup ;;
@@ -431,7 +701,8 @@ main_loop() {
         log "Goodbye."
         exit 0
         ;;
-      *) warn "Invalid option. Please choose 1-9." ;;
+      10) manual_nginx_setup ;;
+      *) warn "Invalid option. Please choose 1-10." ;;
     esac
   done
 }

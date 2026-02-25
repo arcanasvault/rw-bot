@@ -11,3 +11,7 @@ prisma/dev.db
 backups/*.sql
 OUTPUT.md
 backups/
+nginx/certs/*
+!nginx/certs/.gitkeep
+nginx/www/*
+!nginx/www/.gitkeep

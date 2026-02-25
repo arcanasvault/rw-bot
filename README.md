@@ -52,6 +52,7 @@ chmod +x setup.sh
 7. Restore DB
 8. Uninstall (remove containers + volumes)
 9. Exit
+10. Setup NGINX + Certbot (optional)
 
 ### Install / Setup چه می‌کند؟
 
@@ -63,6 +64,8 @@ chmod +x setup.sh
 - `prisma generate` و `prisma migrate deploy` اجرا می‌کند.
 - در صورت `RUN_SEED=true`، seed اجرا می‌شود.
 - راهنمای Nginx برای reverse proxy نمایش می‌دهد.
+- webhook را به صورت خودکار روی Telegram تنظیم می‌کند.
+- `getWebhookInfo` را بررسی می‌کند و خطاهای SSL/404 را نمایش می‌دهد.
 
 ## تنظیم دامنه و Webhook
 
@@ -105,6 +108,7 @@ server {
 - `NODE_ENV=production`
 - `APP_URL=https://your-domain.com`
 - `WEBHOOK_PATH=/telegram/webhook`
+- `WEBHOOK_SET_RETRIES=3`
 - `BOT_TOKEN=...`
 - `BOT_USERNAME=...`
 - `ADMIN_TG_IDS=111111111,222222222`
@@ -116,11 +120,30 @@ server {
 - `MANUAL_CARD_NUMBER=...`
 - `MIN_WALLET_CHARGE_TOMANS=10000`
 - `MAX_WALLET_CHARGE_TOMANS=10000000`
+- `ENABLE_NGINX=true|false`
+- `DOMAIN=your-domain.com`
+- `LETSENCRYPT_EMAIL=you@example.com`
 
 ## اجرای سرویس‌ها با Docker Compose
 
 - `db`: PostgreSQL 16 (persistent volume)
 - `app`: Bot + Express webhook server
+- `nginx`: پروفایل اختیاری `nginx` برای SSL/TLS و reverse proxy
+
+## دیباگ /start و Webhook
+
+- اگر `/start` پاسخ نداد:
+  - ابتدا لاگ `app` را ببینید (`setup.sh` گزینه 5).
+  - مقدار `BOT_TOKEN` و `BOT_USERNAME` را بررسی کنید.
+  - بررسی کنید کاربر ban نشده باشد.
+  - به خاطر burst protection، ارسال پشت‌سرهم `/start` برای چند ثانیه محدود می‌شود.
+
+- اگر webhook مشکل داشت:
+  - از گزینه `1` یا `10` در `setup.sh` برای setWebhook/getWebhookInfo استفاده کنید.
+  - `APP_URL` باید HTTPS معتبر داشته باشد.
+  - پورت URL باید یکی از `443/80/88/8443` باشد.
+  - مسیر `WEBHOOK_PATH` باید دقیقا با مسیر route یکی باشد.
+  - خطاهای `certificate verify failed` یا `404` در لاگ ثبت می‌شوند.
 
 ## دستورات ادمین
 

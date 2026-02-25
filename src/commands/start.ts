@@ -1,5 +1,6 @@
 import { Markup, Telegraf } from 'telegraf';
 import { env } from '../config/env';
+import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { remnawaveService } from '../services/remnawave';
 import type { BotContext } from '../types/context';
@@ -9,7 +10,14 @@ import { fa } from '../utils/farsi';
 import { showMainMenu } from './common';
 
 function extractStartPayload(text: string): string | null {
-  const parts = text.trim().split(' ');
+  const raw = text.trim();
+
+  const inlineRef = raw.match(/\/start\?(.+)$/);
+  if (inlineRef && inlineRef[1]) {
+    return inlineRef[1].trim();
+  }
+
+  const parts = raw.split(' ');
   if (parts.length < 2) {
     return null;
   }
@@ -45,6 +53,27 @@ function createCaptcha(): { question: string; answer: string } {
     question: `${a} + ${b} = ?`,
     answer: String(a + b),
   };
+}
+
+const START_BURST_WINDOW_MS = 15_000;
+const START_BURST_LIMIT = 5;
+const startBurstMap = new Map<number, { count: number; resetAt: number }>();
+
+function isStartBurstLimited(telegramId: number): boolean {
+  const now = Date.now();
+  const current = startBurstMap.get(telegramId);
+
+  if (!current || now > current.resetAt) {
+    startBurstMap.set(telegramId, {
+      count: 1,
+      resetAt: now + START_BURST_WINDOW_MS,
+    });
+    return false;
+  }
+
+  current.count += 1;
+  startBurstMap.set(telegramId, current);
+  return current.count > START_BURST_LIMIT;
 }
 
 async function showWallet(ctx: BotContext): Promise<void> {
@@ -132,49 +161,59 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
       return;
     }
 
-    const payload = extractStartPayload(ctx.message?.text ?? '');
-
-    const user = await prisma.user.upsert({
-      where: { telegramId: BigInt(ctx.from.id) },
-      update: {
-        telegramUsername: ctx.from.username ?? null,
-        firstName: ctx.from.first_name ?? null,
-        lastName: ctx.from.last_name ?? null,
-      },
-      create: {
-        telegramId: BigInt(ctx.from.id),
-        telegramUsername: ctx.from.username ?? null,
-        firstName: ctx.from.first_name ?? null,
-        lastName: ctx.from.last_name ?? null,
-      },
-    });
-
-    const referralId = parseReferral(payload);
-    if (referralId && referralId !== ctx.from.id && !user.referredById) {
-      const referrer = await prisma.user.findUnique({
-        where: { telegramId: BigInt(referralId) },
-        select: { id: true },
-      });
-
-      if (referrer) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { referredById: referrer.id },
-        });
-      }
-    }
-
-    if (shouldRequireCaptcha(ctx) && !ctx.session.captcha?.verified) {
-      const captcha = createCaptcha();
-      ctx.session.captcha = {
-        answer: captcha.answer,
-        verified: false,
-      };
-      await ctx.reply(`برای تایید هویت عدد را ارسال کنید:\n${captcha.question}`);
+    if (isStartBurstLimited(ctx.from.id)) {
+      await ctx.reply('تعداد درخواست /start شما زیاد است. لطفا چند ثانیه دیگر تلاش کنید.');
       return;
     }
 
-    await showMainMenu(ctx);
+    try {
+      const payload = extractStartPayload(ctx.message?.text ?? '');
+
+      const user = await prisma.user.upsert({
+        where: { telegramId: BigInt(ctx.from.id) },
+        update: {
+          telegramUsername: ctx.from.username ?? null,
+          firstName: ctx.from.first_name ?? null,
+          lastName: ctx.from.last_name ?? null,
+        },
+        create: {
+          telegramId: BigInt(ctx.from.id),
+          telegramUsername: ctx.from.username ?? null,
+          firstName: ctx.from.first_name ?? null,
+          lastName: ctx.from.last_name ?? null,
+        },
+      });
+
+      const referralId = parseReferral(payload);
+      if (referralId && referralId !== ctx.from.id && !user.referredById) {
+        const referrer = await prisma.user.findUnique({
+          where: { telegramId: BigInt(referralId) },
+          select: { id: true },
+        });
+
+        if (referrer) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { referredById: referrer.id },
+          });
+        }
+      }
+
+      if (shouldRequireCaptcha(ctx) && !ctx.session.captcha?.verified) {
+        const captcha = createCaptcha();
+        ctx.session.captcha = {
+          answer: captcha.answer,
+          verified: false,
+        };
+        await ctx.reply(`برای تایید هویت عدد را ارسال کنید:\n${captcha.question}`);
+        return;
+      }
+
+      await showMainMenu(ctx);
+    } catch (error) {
+      logger.error(`/start failed user=${ctx.from.id} error=${String(error)}`);
+      await ctx.reply('در ثبت نام یا بارگذاری منو خطا رخ داد. لطفا دوباره تلاش کنید.');
+    }
   });
 
   bot.hears(fa.menu.myServices, async (ctx) => {

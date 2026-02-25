@@ -13,6 +13,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const bot = createBot();
+const webhookPath = env.WEBHOOK_PATH;
 
 async function notifyAdmins(text: string): Promise<void> {
   for (const adminId of env.ADMIN_TG_ID_LIST) {
@@ -108,18 +109,85 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'remnawave-vpn-bot' });
 });
 
+app.post(webhookPath, bot.webhookCallback(webhookPath));
+
+app.use((req, res, next) => {
+  if (req.path === webhookPath) {
+    logger.warn(`Webhook path hit with unsupported method=${req.method} ip=${req.ip}`);
+  }
+  next();
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ ok: false, message: 'Not Found' });
+});
+
+function buildWebhookUrl(): string {
+  return `${env.APP_URL.replace(/\/+$/, '')}${webhookPath}`;
+}
+
+function sanitizeWebhookErrorMessage(message: string | undefined): string {
+  if (!message) {
+    return 'none';
+  }
+
+  return message.replace(env.BOT_TOKEN, '[REDACTED_TOKEN]');
+}
+
+async function configureWebhookWithRetry(): Promise<void> {
+  const webhookUrl = buildWebhookUrl();
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= env.WEBHOOK_SET_RETRIES; attempt += 1) {
+    try {
+      await bot.telegram.setWebhook(webhookUrl);
+      const info = await bot.telegram.getWebhookInfo();
+      logger.info(
+        `Webhook configured url=${info.url} pending=${info.pending_update_count} max_connections=${info.max_connections ?? 'n/a'}`,
+      );
+
+      if (info.last_error_message) {
+        const normalizedLastError = sanitizeWebhookErrorMessage(info.last_error_message);
+        logger.warn(
+          `Telegram webhook last_error_date=${info.last_error_date ?? 'n/a'} message=${normalizedLastError}`,
+        );
+
+        if (
+          normalizedLastError.includes('certificate') ||
+          normalizedLastError.includes('SSL') ||
+          normalizedLastError.includes('404')
+        ) {
+          logger.warn(
+            'Webhook diagnostics: verify APP_URL HTTPS certificate, NGINX path mapping, and WEBHOOK_PATH exact match.',
+          );
+        }
+      }
+
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.error(
+        `Webhook setup failed attempt=${attempt}/${env.WEBHOOK_SET_RETRIES} error=${String(error)}`,
+      );
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, attempt * 1000);
+      });
+    }
+  }
+
+  logger.error(
+    `Webhook setup exhausted all retries. Please verify APP_URL, SSL certificate, and firewall. lastError=${String(lastError)}`,
+  );
+}
+
 async function bootstrap(): Promise<void> {
-  const webhookUrl = `${env.APP_URL}${env.WEBHOOK_PATH}`;
-
-  app.use(env.WEBHOOK_PATH, bot.webhookCallback(env.WEBHOOK_PATH));
-  await bot.telegram.setWebhook(webhookUrl);
-  logger.info(`Webhook set to ${webhookUrl}`);
-
   startNotificationCron(bot);
 
   app.listen(env.PORT, () => {
     logger.info(`Server started on ${env.PORT}`);
   });
+
+  await configureWebhookWithRetry();
 }
 
 bootstrap().catch(async (error) => {

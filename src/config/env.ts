@@ -8,7 +8,9 @@ const envSchema = z.object({
   WEBHOOK_PATH: z
     .string()
     .regex(/^\/[A-Za-z0-9/_-]*$/)
-    .default('/telegram/webhook'),
+    .default('/telegram/webhook')
+    .transform((value) => (value.length > 1 ? value.replace(/\/+$/, '') : value)),
+  WEBHOOK_SET_RETRIES: z.coerce.number().int().min(1).max(10).default(3),
   BOT_TOKEN: z.string().min(10),
   BOT_USERNAME: z.string().min(3),
   ADMIN_TG_IDS: z.string().min(1),
