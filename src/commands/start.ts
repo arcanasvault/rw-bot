@@ -82,7 +82,9 @@ function extractSubscriptionData(payload: unknown): {
 
   const source = payload as Record<string, unknown>;
   const nestedSubscription =
-    source.subscription && typeof source.subscription === 'object' && !Array.isArray(source.subscription)
+    source.subscription &&
+    typeof source.subscription === 'object' &&
+    !Array.isArray(source.subscription)
       ? (source.subscription as Record<string, unknown>)
       : null;
 
@@ -134,19 +136,16 @@ async function showWallet(ctx: BotContext): Promise<void> {
 async function getOwnedService(
   telegramId: number,
   serviceId: string,
-): Promise<
-  | {
-      id: string;
-      name: string;
-      remnaUsername: string;
-      remnaUserUuid: string;
-      expireAt: Date;
-      trafficLimitBytes: bigint;
-      lastKnownUsedBytes: bigint;
-      subscriptionUrl: string | null;
-    }
-  | null
-> {
+): Promise<{
+  id: string;
+  name: string;
+  remnaUsername: string;
+  remnaUserUuid: string;
+  expireAt: Date;
+  trafficLimitBytes: bigint;
+  lastKnownUsedBytes: bigint;
+  subscriptionUrl: string | null;
+} | null> {
   const user = await prisma.user.findUnique({
     where: { telegramId: BigInt(telegramId) },
     select: { id: true },
@@ -480,4 +479,3 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     await ctx.reply('پاسخ اشتباه است. دوباره تلاش کنید.');
   });
 }
-

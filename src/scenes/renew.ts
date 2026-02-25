@@ -79,7 +79,9 @@ const scene = new Scenes.WizardScene<BotContext>(
       });
       const tetraEnabled = setting?.enableTetra98 ?? true;
       const manualEnabled = setting?.enableManualPayment ?? true;
-      const paymentButtons = [[Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')]];
+      const paymentButtons = [
+        [Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')],
+      ];
       if (tetraEnabled) {
         paymentButtons.push([
           Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra'),

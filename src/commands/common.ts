@@ -14,10 +14,7 @@ export function expandedMainMenuKeyboard() {
 }
 
 export function collapsedMainMenuKeyboard() {
-  return Markup.keyboard([
-    [fa.menu.expand],
-    [fa.menu.support],
-  ])
+  return Markup.keyboard([[fa.menu.expand], [fa.menu.support]])
     .resize()
     .persistent();
 }

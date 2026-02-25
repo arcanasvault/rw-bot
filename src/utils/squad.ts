@@ -8,4 +8,3 @@ export function parseInternalSquadIds(raw: string | null | undefined): number[] 
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isInteger(item) && item > 0);
 }
-

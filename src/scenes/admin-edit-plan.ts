@@ -6,7 +6,10 @@ import type { BotContext } from '../types/context';
 import type { AdminEditPlanWizardState } from '../types/session';
 
 const planIdSchema = z.string().trim().min(8);
-const nameSchema = z.string().trim().regex(/^[a-zA-Z0-9_-]{2,60}$/);
+const nameSchema = z
+  .string()
+  .trim()
+  .regex(/^[a-zA-Z0-9_-]{2,60}$/);
 const displayNameSchema = z.string().trim().min(2).max(100);
 const positiveFloatSchema = z
   .string()
@@ -18,7 +21,10 @@ const positiveIntSchema = z
   .trim()
   .transform((value) => Number(value))
   .pipe(z.number().int().positive());
-const internalSquadSchema = z.string().trim().regex(/^\d+(,\d+)*$/);
+const internalSquadSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(,\d+)*$/);
 
 function isAdmin(ctx: BotContext): boolean {
   return Boolean(ctx.from && env.ADMIN_TG_ID_LIST.includes(ctx.from.id));
@@ -161,9 +167,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
     const state = ctx.wizard.state as AdminEditPlanWizardState;
     state.priceTomans = parsed.data;
-    await ctx.reply(
-      'Enter internal squad ID(s) for this plan (comma-separated if multiple):',
-    );
+    await ctx.reply('Enter internal squad ID(s) for this plan (comma-separated if multiple):');
     return ctx.wizard.next();
   },
   async (ctx) => {
@@ -216,4 +220,3 @@ const scene = new Scenes.WizardScene<BotContext>(
 );
 
 export const adminEditPlanWizardScene = scene;
-
