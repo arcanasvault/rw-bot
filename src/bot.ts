@@ -20,13 +20,10 @@ import { paymentOrchestrator } from './services/payment-orchestrator';
 
 const SCENE_EXIT_TEXTS = new Set<string>([
   fa.menu.buy,
-  fa.menu.renew,
   fa.menu.myServices,
   fa.menu.test,
   fa.menu.wallet,
   fa.menu.support,
-  fa.menu.expand,
-  fa.menu.collapse,
 ]);
 
 function shouldAllowCallbackInScene(sceneId: string, callbackData: string): boolean {

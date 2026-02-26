@@ -172,6 +172,24 @@ async function getOwnedService(
   });
 }
 
+async function getOwnedServiceWithPlan(telegramId: number, serviceId: string) {
+  const user = await prisma.user.findUnique({
+    where: { telegramId: BigInt(telegramId) },
+    select: { id: true },
+  });
+  if (!user) {
+    return null;
+  }
+
+  return prisma.service.findFirst({
+    where: {
+      id: serviceId,
+      userId: user.id,
+    },
+    include: { plan: true },
+  });
+}
+
 async function renderServicesList(ctx: BotContext, editCurrentMessage = false): Promise<void> {
   if (!ctx.from) {
     return;
@@ -346,6 +364,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
           [Markup.button.callback('لینک هوشمند', `svc:smart:${service.id}`)],
           [Markup.button.callback('اشتراک QR', `svc:qr:${service.id}`)],
           [Markup.button.callback('لینک اضطراری', `svc:emergency:${service.id}`)],
+          [Markup.button.callback('تمدید سرویس', `svc:renew:${service.id}`)],
           [Markup.button.callback('بازگشت', SERVICES_BACK_CB)],
         ]).reply_markup,
       },
@@ -459,16 +478,44 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     }
   });
 
+  bot.action(/^svc:renew:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
+      return;
+    }
+
+    const service = await getOwnedServiceWithPlan(ctx.from.id, ctx.match[1]);
+    if (!service) {
+      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      return;
+    }
+
+    if (!service.plan) {
+      await ctx.answerCbQuery();
+      await ctx.reply('برای این سرویس امکان تمدید وجود ندارد.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+    await ctx.reply(
+      `تمدید سرویس ${service.name}\nمبلغ: ${formatTomans(service.plan.priceTomans)}\nروش پرداخت را انتخاب کنید.`,
+    );
+    await ctx.scene.enter('renew-wizard', { serviceId: service.id });
+  });
+
   bot.hears(fa.menu.wallet, async (ctx) => {
     await showWallet(ctx);
   });
 
-  bot.hears(fa.menu.collapse, async (ctx) => {
-    await showMainMenu(ctx, 'منو جمع شد.', true);
+  bot.command('hidemenu', async (ctx) => {
+    await ctx.reply('منو مخفی شد.', {
+      reply_markup: {
+        remove_keyboard: true,
+      },
+    });
   });
 
-  bot.hears(fa.menu.expand, async (ctx) => {
-    await showMainMenu(ctx, 'منو باز شد.');
+  bot.command('showmenu', async (ctx) => {
+    await showMainMenu(ctx, 'منوی اصلی نمایش داده شد.');
   });
 
   bot.hears(fa.menu.support, async (ctx) => {

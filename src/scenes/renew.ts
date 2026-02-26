@@ -15,6 +15,56 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
+    const sceneState = (ctx.scene.state ?? {}) as { serviceId?: string };
+    if (sceneState.serviceId) {
+      const preSelected = await prisma.service.findFirst({
+        where: {
+          id: sceneState.serviceId,
+          user: { telegramId: BigInt(ctx.from.id) },
+        },
+        include: { plan: true },
+      });
+
+      if (!preSelected || !preSelected.plan) {
+        await ctx.reply('سرویس برای تمدید معتبر نیست.');
+        return ctx.scene.leave();
+      }
+
+      const state = ctx.wizard.state as RenewWizardState;
+      state.serviceId = preSelected.id;
+      state.planId = preSelected.plan.id;
+      state.planPriceTomans = preSelected.plan.priceTomans;
+
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: {
+          enableTetra98: true,
+          enableManualPayment: true,
+        },
+      });
+      const tetraEnabled = setting?.enableTetra98 ?? true;
+      const manualEnabled = setting?.enableManualPayment ?? true;
+      const paymentButtons = [
+        [Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')],
+      ];
+      if (tetraEnabled) {
+        paymentButtons.push([
+          Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
+        ]);
+      }
+      if (manualEnabled) {
+        paymentButtons.push([
+          Markup.button.callback('پرداخت کارت به کارت', 'renew_gateway:manual'),
+        ]);
+      }
+
+      await ctx.reply(`مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
+        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+      });
+      ctx.wizard.selectStep(2);
+      return;
+    }
+
     const user = await prisma.user.findUnique({
       where: { telegramId: BigInt(ctx.from.id) },
       include: {

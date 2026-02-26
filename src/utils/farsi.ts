@@ -1,14 +1,11 @@
 export const fa = {
   menu: {
     buy: 'خرید پلن',
-    renew: 'تمدید سرویس',
     myServices: 'سرویس‌های من',
     test: 'دریافت سرویس تست',
     wallet: 'کیف پول',
     support: 'پشتیبانی',
     back: 'بازگشت',
-    collapse: 'جمع کردن منو',
-    expand: 'باز کردن منو',
   },
   errors: {
     generic: 'خطا رخ داد. لطفا دوباره تلاش کنید.',
