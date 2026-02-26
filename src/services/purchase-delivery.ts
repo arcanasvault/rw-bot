@@ -1,10 +1,11 @@
-import QRCode from 'qrcode';
 import { PaymentType } from '@prisma/client';
 import type { Telegram } from 'telegraf';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { remnawaveService } from './remnawave';
 import { bytesToGb, daysLeft } from '../utils/format';
+import QRCodeStyling from 'qr-code-styling';
+import { qrOptions } from '../config/qr';
 
 function parseServiceName(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -95,26 +96,23 @@ export async function sendPurchaseAccessByPayment(
   }
 
   try {
-    const qrBuffer = await QRCode.toBuffer(subscriptionUrl, {
-      errorCorrectionLevel: 'M',
-      margin: 2,
-      width: 700,
-    });
+    const qrCode = new QRCodeStyling({ ...qrOptions, data: subscriptionUrl });
+    const qrBuffer = (await qrCode.getRawData()) as Buffer<ArrayBufferLike>;
 
     const serviceTrafficInGb = bytesToGb(service.trafficLimitBytes);
     const serviceDays = Math.max(0, daysLeft(service.expireAt));
+
+    const serviceDetailsCaption = `🔮 نام سرویس: ${service.name}
+🔗 لینک هوشمند:\n ${subscriptionUrl}\n
+🌐 حجم: ${serviceTrafficInGb}GB
+🗓 زمان باقی‌مانده: ${serviceDays} روز
+`;
 
     await telegram.sendPhoto(
       Number(payment.user.telegramId),
       { source: qrBuffer },
       {
-        caption: `QR سرویس ${service.name}
-      
-      🔗 لینک هوشمند: ${subscriptionUrl}
-
-      🌐 حجم: ${serviceTrafficInGb}
-      🗓 زمان باقی‌مانده: ${serviceDays}
-      `,
+        caption: serviceDetailsCaption,
       },
     );
   } catch (error) {

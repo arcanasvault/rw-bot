@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import { Markup, Telegraf } from 'telegraf';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
@@ -9,6 +8,8 @@ import { formatTomans } from '../utils/currency';
 import { bytesToGb, daysLeft } from '../utils/format';
 import { fa } from '../utils/farsi';
 import { showMainMenu } from './common';
+import QRCodeStyling from 'qr-code-styling';
+import { qrOptions } from '../config/qr';
 
 const START_BURST_WINDOW_MS = 15_000;
 const START_BURST_LIMIT = 5;
@@ -463,11 +464,8 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
         return;
       }
 
-      const qrBuffer = await QRCode.toBuffer(qrSource, {
-        errorCorrectionLevel: 'M',
-        margin: 2,
-        width: 700,
-      });
+      const qrCode = new QRCodeStyling({ ...qrOptions, data: qrSource });
+      const qrBuffer = (await qrCode.getRawData()) as Buffer<ArrayBufferLike>;
 
       await ctx.replyWithPhoto(
         { source: qrBuffer },
