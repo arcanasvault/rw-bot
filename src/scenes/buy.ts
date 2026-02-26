@@ -23,7 +23,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
     const buttons = plans.map((plan) =>
       Markup.button.callback(
-        `${plan.displayName} | ${plan.trafficGb}GB | ${plan.durationDays} روز | ${formatTomans(plan.priceTomans)}`,
+        `${plan.displayName}`,
         `buy_plan:${plan.id}`,
       ),
     );
