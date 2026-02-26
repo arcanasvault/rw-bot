@@ -18,6 +18,44 @@ import type { BotSession } from './types/session';
 import { fa } from './utils/farsi';
 import { paymentOrchestrator } from './services/payment-orchestrator';
 
+const SCENE_EXIT_TEXTS = new Set<string>([
+  fa.menu.buy,
+  fa.menu.renew,
+  fa.menu.myServices,
+  fa.menu.test,
+  fa.menu.wallet,
+  fa.menu.support,
+  fa.menu.expand,
+  fa.menu.collapse,
+]);
+
+function shouldAllowCallbackInScene(sceneId: string, callbackData: string): boolean {
+  if (sceneId === 'buy-wizard') {
+    return callbackData.startsWith('buy_plan:') || callbackData.startsWith('buy_gateway:');
+  }
+
+  if (sceneId === 'renew-wizard') {
+    return callbackData.startsWith('renew_service:') || callbackData.startsWith('renew_gateway:');
+  }
+
+  if (sceneId === 'wallet-charge-wizard') {
+    return callbackData.startsWith('wallet_gateway:');
+  }
+
+  return false;
+}
+
+function resetSceneSession(ctx: BotContext): void {
+  if (!ctx.session || !ctx.session.__scenes) {
+    return;
+  }
+
+  ctx.session.__scenes.current = undefined;
+  ctx.session.__scenes.state = {};
+  ctx.session.__scenes.cursor = 0;
+  ctx.session.pendingManualPaymentId = undefined;
+}
+
 export function createBot(): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(env.BOT_TOKEN);
 
@@ -48,6 +86,30 @@ export function createBot(): Telegraf<BotContext> {
       }),
     }),
   );
+
+  bot.use(async (ctx, next) => {
+    const activeSceneId = ctx.session?.__scenes?.current;
+    if (!activeSceneId) {
+      await next();
+      return;
+    }
+
+    if (ctx.message && 'text' in ctx.message) {
+      const text = (ctx.message.text ?? '').trim();
+      if (text.startsWith('/') || SCENE_EXIT_TEXTS.has(text)) {
+        resetSceneSession(ctx);
+      }
+    }
+
+    if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+      const callbackData = ctx.callbackQuery.data ?? '';
+      if (!shouldAllowCallbackInScene(activeSceneId, callbackData)) {
+        resetSceneSession(ctx);
+      }
+    }
+
+    await next();
+  });
 
   bot.use(ensureKnownUser);
   bot.use(stage.middleware());

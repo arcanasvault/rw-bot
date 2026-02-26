@@ -190,11 +190,30 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
   if (!user || user.services.length === 0) {
     if (editCurrentMessage) {
       await ctx.answerCbQuery();
-      await ctx.reply('شما هنوز سرویسی ندارید.');
+      await ctx.reply('شما سرویسی ندارید');
       return;
     }
-    await ctx.reply('شما هنوز سرویسی ندارید.');
+    await ctx.reply('شما سرویسی ندارید');
     return;
+  }
+
+  for (const service of user.services) {
+    try {
+      const remote = await remnawaveService.getUserByUsername(service.remnaUsername);
+      await prisma.service.update({
+        where: { id: service.id },
+        data: {
+          trafficLimitBytes: BigInt(remote.trafficLimitBytes ?? Number(service.trafficLimitBytes)),
+          lastKnownUsedBytes: BigInt(
+            remote.userTraffic.usedTrafficBytes ?? Number(service.lastKnownUsedBytes),
+          ),
+          expireAt: remote.expireAt ?? service.expireAt,
+          subscriptionUrl: remote.subscriptionUrl ?? service.subscriptionUrl,
+        },
+      });
+    } catch (error) {
+      logger.warn(`services-list sync failed service=${service.id} error=${String(error)}`);
+    }
   }
 
   const keyboard = Markup.inlineKeyboard(

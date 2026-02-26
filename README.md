@@ -10,8 +10,8 @@
 - سرویس تست یک‌بار در طول عمر هر Telegram ID
 - کیف پول + شارژ با Tetra98
 - پرداخت کارت‌به‌کارت + ثبت رسید عکس + تایید/رد ادمین
-- کد تخفیف
-- همکاری فروش (Referral)
+- خروج خودکار از سناریوها (Wizard Opt-Out) با هر دکمه/دستور جدید
+- منوی «سرویس‌های من» با دکمه‌های لینک هوشمند، لینک اضطراری، QR و بازگشت
 - اعلان روزانه کاهش حجم/انقضا در ساعت 16:00 تهران
 - پنل ادمین
 - حالت Webhook
@@ -118,6 +118,7 @@ server {
 - `REMNAWAVE_TOKEN=...`
 - `TETRA98_API_KEY=...`
 - `MANUAL_CARD_NUMBER=...`
+- `DEFAULT_INTERNAL_SQUAD_ID=1`
 - `MIN_WALLET_CHARGE_TOMANS=10000`
 - `MAX_WALLET_CHARGE_TOMANS=10000000`
 - `ENABLE_NGINX=true|false`
@@ -145,6 +146,11 @@ server {
   - مسیر `WEBHOOK_PATH` باید دقیقا با مسیر route یکی باشد.
   - خطاهای `certificate verify failed` یا `404` در لاگ ثبت می‌شوند.
 
+## رفتار سناریوها (Opt-Out)
+
+- اگر کاربر داخل Wizard باشد (مثلا خرید) و دکمه دیگری بزند یا دستور جدید بفرستد، سناریو به صورت خودکار لغو می‌شود.
+- ورودی جدید همان لحظه مثل حالت عادی پردازش می‌شود (مثلا رفتن به منوی اصلی یا سرویس‌ها).
+
 ## دستورات ادمین
 
 - `/admin`
@@ -158,15 +164,17 @@ server {
 - `/manuals`
 - `/broadcast <message>`
 - `/plans`
-- `/addplan name|trafficGb|durationDays|priceTomans`
-- `/editplan id|name|trafficGb|durationDays|priceTomans|active0or1`
+- `/addplan`
+- `/editplan`
 - `/delplan <plan_id>`
 - `/settest <traffic_gb> <days>`
+- `/settestinternalsquad <id(s)>`
 - `/testtoggle <on|off>`
 - `/resettest <tg_id>`
+- `/resetalltests`
+- `/togglemanual`
+- `/toggletetra`
 - `/setnotify <days> <gb>`
-- `/setaffiliate <fixed|percent> <value>`
-- `/promoadd code|percent|fixed|uses`
 
 ## مانیتورینگ و عملیات
 
