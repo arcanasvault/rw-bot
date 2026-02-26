@@ -21,10 +21,7 @@ const positiveIntSchema = z
   .trim()
   .transform((value) => Number(value))
   .pipe(z.number().int().positive());
-const internalSquadSchema = z
-  .string()
-  .trim()
-  .regex(/^\d+(,\d+)*$/);
+const internalSquadSchema = z.string();
 
 function isAdmin(ctx: BotContext): boolean {
   return Boolean(ctx.from && env.ADMIN_TG_ID_LIST.includes(ctx.from.id));
