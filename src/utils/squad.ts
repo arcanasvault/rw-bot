@@ -1,10 +1,10 @@
-export function parseInternalSquadIds(raw: string | null | undefined): number[] {
+export function parseInternalSquadIds(raw: string | null | undefined): string[] {
   if (!raw) {
     return [];
   }
 
   return raw
     .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isInteger(item) && item > 0);
+    .map((item) => item.trim())
+    .filter((item) => !!item);
 }

@@ -86,7 +86,7 @@ export interface CreateRemnaUserInput {
   trafficLimitBytes: number;
   expireAt: Date;
   telegramId: number;
-  activeInternalSquads?: number[];
+  activeInternalSquads?: string[];
 }
 
 export interface UpdateRemnaUserInput {
