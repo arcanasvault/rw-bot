@@ -95,6 +95,7 @@ model Service {
   subscriptionUrl   String?
   trafficLimitBytes BigInt
   expireAt          DateTime
+  isTest            Boolean   @default(false)
   isActive          Boolean   @default(true)
   lastKnownUsedBytes BigInt   @default(0)
   createdAt         DateTime  @default(now())

@@ -7,6 +7,8 @@ import { createBot } from './bot';
 import { paymentOrchestrator } from './services/payment-orchestrator';
 import { tetra98Service } from './services/tetra98';
 import { startNotificationCron } from './services/notification';
+import { startCleanupCrons } from './services/cleanup';
+import { sendPurchaseAccessByPayment } from './services/purchase-delivery';
 
 const app = express();
 app.use(express.json());
@@ -85,10 +87,14 @@ app.post('/callback/tetra98', async (req: Request, res: Response) => {
     }
 
     await paymentOrchestrator.processSuccessfulPayment(payment.id);
-    await bot.telegram.sendMessage(
-      Number(payment.user.telegramId),
-      'پرداخت شما با موفقیت تایید شد و سرویس/کیف پول بروزرسانی شد.',
-    );
+    if (payment.type === 'PURCHASE') {
+      await sendPurchaseAccessByPayment(bot.telegram, payment.id);
+    } else {
+      await bot.telegram.sendMessage(
+        Number(payment.user.telegramId),
+        'پرداخت شما با موفقیت تایید شد و سرویس/کیف پول بروزرسانی شد.',
+      );
+    }
     res.status(200).json({ ok: true });
   } catch (error) {
     logger.error(`callback tetra98 failed: ${String(error)}`);
@@ -182,6 +188,7 @@ async function configureWebhookWithRetry(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   startNotificationCron(bot);
+  startCleanupCrons();
 
   app.listen(env.PORT, () => {
     logger.info(`Server started on ${env.PORT}`);

@@ -158,6 +158,7 @@ async function getOwnedService(
     where: {
       id: serviceId,
       userId: user.id,
+      isTest: false,
     },
     select: {
       id: true,
@@ -185,6 +186,7 @@ async function getOwnedServiceWithPlan(telegramId: number, serviceId: string) {
     where: {
       id: serviceId,
       userId: user.id,
+      isTest: false,
     },
     include: { plan: true },
   });
@@ -199,6 +201,7 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
     where: { telegramId: BigInt(ctx.from.id) },
     include: {
       services: {
+        where: { isTest: false },
         include: { plan: true },
         orderBy: { createdAt: 'desc' },
       },
@@ -208,10 +211,10 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
   if (!user || user.services.length === 0) {
     if (editCurrentMessage) {
       await ctx.answerCbQuery();
-      await ctx.reply('شما سرویسی ندارید');
+      await ctx.reply('شما سرویس خریداری شده‌ای ندارید');
       return;
     }
-    await ctx.reply('شما سرویسی ندارید');
+    await ctx.reply('شما سرویس خریداری شده‌ای ندارید');
     return;
   }
 

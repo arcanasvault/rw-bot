@@ -7,6 +7,7 @@ import type { BotContext } from '../types/context';
 import type { BuyWizardState } from '../types/session';
 import { formatTomans } from '../utils/currency';
 import { paymentOrchestrator } from '../services/payment-orchestrator';
+import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
 
 const scene = new Scenes.WizardScene<BotContext>(
   'buy-wizard',
@@ -144,7 +145,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
         if (gateway === PaymentGateway.WALLET) {
           await ctx.answerCbQuery();
-          await ctx.reply('خرید با موفقیت انجام شد و سرویس شما فعال شد.');
+          await sendPurchaseAccessByPayment(ctx.telegram, payment.id);
           return ctx.scene.leave();
         }
 

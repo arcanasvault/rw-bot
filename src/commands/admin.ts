@@ -10,6 +10,7 @@ import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { paymentOrchestrator } from '../services/payment-orchestrator';
+import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
 import { walletService } from '../services/wallet';
 import type { BotContext } from '../types/context';
 import { formatTomans } from '../utils/currency';
@@ -434,10 +435,14 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       });
 
       await ctx.answerCbQuery('تایید شد');
-      await ctx.telegram.sendMessage(
-        Number(payment.user.telegramId),
-        'پرداخت شما تایید شد و سرویس/کیف پول بروزرسانی شد.',
-      );
+      if (payment.type === PaymentType.PURCHASE) {
+        await sendPurchaseAccessByPayment(ctx.telegram, payment.id);
+      } else {
+        await ctx.telegram.sendMessage(
+          Number(payment.user.telegramId),
+          'پرداخت شما تایید شد و سرویس/کیف پول بروزرسانی شد.',
+        );
+      }
     } catch (error) {
       logger.error(`manual approve failed paymentId=${payment.id} error=${String(error)}`);
       await ctx.answerCbQuery('خطا در تایید');

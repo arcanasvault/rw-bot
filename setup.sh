@@ -655,6 +655,37 @@ uninstall_stack() {
   log "Stack removed"
 }
 
+reset_database_completely() {
+  detect_compose
+  warn "This will delete ALL data permanently!"
+  read -r -p "Are you sure you want to reset database completely? (yes/no): " confirm
+  if [[ "$(echo "$confirm" | tr '[:upper:]' '[:lower:]')" != "yes" ]]; then
+    warn "Database reset canceled."
+    return
+  fi
+
+  if is_true_value "$(read_env_value ENABLE_NGINX)"; then
+    run_compose --profile nginx up -d db app nginx
+  else
+    run_compose up -d db app
+  fi
+
+  if run_compose exec -T app pnpm prisma migrate reset --force; then
+    log "Database reset completed using prisma migrate reset."
+    return
+  fi
+
+  warn "prisma migrate reset failed. Running fallback reset via docker volumes."
+  run_compose --profile nginx down -v --remove-orphans
+  if is_true_value "$(read_env_value ENABLE_NGINX)"; then
+    run_compose --profile nginx up -d --build db app nginx
+  else
+    run_compose up -d --build db app
+  fi
+  run_migrations
+  log "Database reset completed using fallback flow."
+}
+
 manual_nginx_setup() {
   install_docker_if_needed
   ensure_env_file
@@ -677,8 +708,9 @@ print_menu() {
 6) Backup DB
 7) Restore DB
 8) Uninstall (remove containers + volumes)
-9) Exit
+9) Reset Database Completely
 10) Setup NGINX + Certbot (optional)
+0) Exit
 MENU
 }
 
@@ -686,7 +718,7 @@ MENU
 main_loop() {
   while true; do
     print_menu
-    read -r -p "Select an option [1-10]: " choice
+    read -r -p "Select an option [0-10]: " choice
 
     case "$choice" in
       1) install_setup ;;
@@ -697,12 +729,13 @@ main_loop() {
       6) backup_db ;;
       7) restore_db ;;
       8) uninstall_stack ;;
-      9)
+      9) reset_database_completely ;;
+      10) manual_nginx_setup ;;
+      0)
         log "Goodbye."
         exit 0
         ;;
-      10) manual_nginx_setup ;;
-      *) warn "Invalid option. Please choose 1-10." ;;
+      *) warn "Invalid option. Please choose 0-10." ;;
     esac
   done
 }

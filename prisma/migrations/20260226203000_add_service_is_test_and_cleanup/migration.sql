@@ -1,0 +1,2 @@
+ALTER TABLE "Service"
+ADD COLUMN "isTest" BOOLEAN NOT NULL DEFAULT false;

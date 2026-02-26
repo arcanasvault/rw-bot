@@ -33,7 +33,7 @@
 ## نصب و راه‌اندازی سریع با Docker (پیشنهادی)
 
 ```bash
-git clone <YOUR_REPO_URL> remnawave-vpn-bot
+git clone https://github.com/arcanasvault/rw-bot
 cd remnawave-vpn-bot
 chmod +x setup.sh
 ./setup.sh
@@ -51,8 +51,9 @@ chmod +x setup.sh
 6. Backup DB
 7. Restore DB
 8. Uninstall (remove containers + volumes)
-9. Exit
+9. Reset Database Completely
 10. Setup NGINX + Certbot (optional)
+0. Exit
 
 ### Install / Setup چه می‌کند؟
 
@@ -80,6 +81,22 @@ ${APP_URL}${WEBHOOK_PATH}
 ```text
 ${APP_URL}/callback/tetra98
 ```
+
+## نصب روی همان سرور پنل RemnaWave
+
+- می‌توانید ربات را روی همان Ubuntu VPS پنل RemnaWave نصب کنید.
+- برای ربات یک دیتابیس و کاربر PostgreSQL جدا بسازید و از دیتابیس پنل استفاده نکنید.
+- در این حالت مقدار `REMNAWAVE_URL` را روی آدرس داخلی پنل بگذارید:
+  - `http://127.0.0.1:3000`
+  - یا `http://localhost:3000`
+  - یا پورت داخلی واقعی پنل شما
+- برای webhook:
+  - یا یک ساب‌دامین جدا برای ربات بگیرید.
+  - یا روی همان دامنه پنل، یک مسیر جدا مثل `/bot` یا `/telegram/webhook` پروکسی کنید.
+- ربات را به‌صورت سرویس مستقل اجرا کنید:
+  - Docker Compose (پیشنهادی)
+  - یا PM2
+- در صورت نیاز می‌توانید با NGINX، reverse proxy جدا برای webhook ربات تنظیم کنید.
 
 ### نمونه Nginx
 
@@ -130,6 +147,9 @@ server {
 - `db`: PostgreSQL 16 (persistent volume)
 - `app`: Bot + Express webhook server
 - `nginx`: پروفایل اختیاری `nginx` برای SSL/TLS و reverse proxy
+- کران پاک‌سازی خودکار:
+  - هر روز ساعت 03:00 تهران: حذف سرویس‌های تست منقضی شده
+  - هر روز ساعت 04:00 تهران: حذف سرویس‌های غیرتست که بیش از 7 روز از انقضایشان گذشته
 
 ## دیباگ /start و Webhook
 
