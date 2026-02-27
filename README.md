@@ -84,39 +84,86 @@ ${APP_URL}/callback/tetra98
 
 ## نصب روی همان سرور پنل RemnaWave
 
-- می‌توانید ربات را روی همان Ubuntu VPS پنل RemnaWave نصب کنید.
-- برای ربات یک دیتابیس و کاربر PostgreSQL جدا بسازید و از دیتابیس پنل استفاده نکنید.
-- در این حالت مقدار `REMNAWAVE_URL` را روی آدرس داخلی پنل بگذارید:
-  - `http://127.0.0.1:3000`
-  - یا `http://localhost:3000`
-  - یا پورت داخلی واقعی پنل شما
-- برای webhook:
-  - یا یک ساب‌دامین جدا برای ربات بگیرید.
-  - یا روی همان دامنه پنل، یک مسیر جدا مثل `/bot` یا `/telegram/webhook` پروکسی کنید.
-- ربات را به‌صورت سرویس مستقل اجرا کنید:
-  - Docker Compose (پیشنهادی)
-  - یا PM2
-- در صورت نیاز می‌توانید با NGINX، reverse proxy جدا برای webhook ربات تنظیم کنید.
+در این سناریو پنل RemnaWave از قبل روی همان Ubuntu VPS فعال است (پنل روی `127.0.0.1:3000` و NGINX هاست هم در حال پروکسی کردن است).
 
-### نمونه Nginx
+1. پیش‌نیاز و آماده‌سازی پروژه:
+   - پروژه ربات را clone کنید و وارد پوشه شوید:
+   ```bash
+   git clone https://github.com/arcanasvault/rw-bot
+   cd remnawave-vpn-bot
+   ```
+   - فایل env را بسازید:
+   ```bash
+   cp .env.example .env
+   ```
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+2. دیتابیس جدا برای ربات:
+   - حتما برای ربات PostgreSQL Database/User مستقل بسازید.
+   - از دیتابیس پنل RemnaWave برای ربات استفاده نکنید.
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+3. اتصال ربات به پنل محلی RemnaWave:
+   - در `.env` مقدار `REMNAWAVE_URL` را روی آدرس داخلی پنل بگذارید:
+     - `REMNAWAVE_URL=http://127.0.0.1:3000`
+     - یا `REMNAWAVE_URL=http://localhost:3000`
 
-بعد از تنظیم Nginx، TLS (Let's Encrypt) را فعال کنید.
+4. تنظیم پورت ربات روی همان VPS:
+   - چون پورت `3000` معمولا توسط پنل اشغال است، برای ربات پورت `4000` پیشنهاد می‌شود.
+   - `setup.sh` اگر اشغال بودن `3000` را تشخیص دهد، به صورت خودکار `4000` را به عنوان پیش‌فرض `APP_PORT` پیشنهاد می‌دهد.
+   - در صورت نیاز می‌توانید پورت دیگری وارد کنید.
+
+5. تنظیم NGINX برای ساب‌دامین ربات:
+   - یک ساب‌دامین جدا مثل `bot.ether.2bd.net` برای webhook ربات تنظیم کنید.
+   - روی NGINX هاست یک server block جدا برای ربات اضافه کنید تا به پورت ربات (مثلا `4000`) پروکسی شود:
+   ```nginx
+   server {
+       listen 80;
+       server_name bot.ether.2bd.net;
+
+       location / {
+           proxy_pass http://127.0.0.1:4000;
+           proxy_http_version 1.1;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+   - اگر گواهی دامنه bot از قبل دارید، همان را استفاده کنید.
+   - اگر ندارید، گواهی جدید بگیرید:
+   ```bash
+   certbot --nginx -d bot.ether.2bd.net
+   ```
+
+6. اجرای نصب با اسکریپت:
+   - اسکریپت را اجرا کنید:
+   ```bash
+   chmod +x setup.sh
+   ./setup.sh
+   ```
+   - گزینه `1) Install / Setup` را بزنید.
+   - هنگام Prompt ها:
+     - `REMNAWAVE_URL` را `http://127.0.0.1:3000` بگذارید.
+     - `APP_URL` را دامنه HTTPS ربات بگذارید (مثلا `https://bot.ether.2bd.net`).
+     - `WEBHOOK_PATH` را مقدار پیش‌فرض `/telegram/webhook` نگه دارید مگر اینکه عمدا تغییر داده باشید.
+     - برای `APP_PORT` اگر `3000` اشغال است، مقدار پیشنهادی `4000` را قبول کنید.
+
+7. بررسی بعد از نصب:
+   - وضعیت webhook را چک کنید:
+   ```bash
+   curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
+   ```
+   - تست عملکرد:
+     - در تلگرام `/start` بفرستید.
+     - لاگ‌ها را از `setup.sh` گزینه `5` ببینید.
+
+8. عیب‌یابی سریع:
+   - تداخل پورت: اگر app بالا نیامد، یک پورت آزاد دیگر برای `APP_PORT` انتخاب کنید و دوباره `Start / Restart` بزنید.
+   - NGINX: بعد از تغییر کانفیگ:
+   ```bash
+   nginx -t && nginx -s reload
+   ```
+   - فایروال: اگر همان الگوی فعلی NGINX را استفاده می‌کنید، معمولا قانون جدید UFW لازم نیست.
 
 ## متغیرهای محیطی `.env`
 

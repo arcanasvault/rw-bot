@@ -69,6 +69,32 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "Command not found: $1"
 }
 
+is_port_in_use() {
+  local port="$1"
+
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltn "( sport = :$port )" 2>/dev/null | tail -n +2 | grep -q .; then
+      return 0
+    fi
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+suggest_host_app_port() {
+  if is_port_in_use 3000; then
+    echo "4000"
+  else
+    echo "3000"
+  fi
+}
+
 install_prerequisites() {
   command -v apt-get >/dev/null 2>&1 || die "This installer supports Ubuntu/Debian (apt-get) only."
 
@@ -226,7 +252,12 @@ ensure_env_file() {
   prompt_var "MAX_WALLET_CHARGE_TOMANS" "Max wallet charge (Tomans)" "10000000"
 
   prompt_var "PORT" "Container app port" "3000"
-  prompt_var "APP_PORT" "Host app port mapping" "3000"
+  local suggested_app_port
+  suggested_app_port="$(suggest_host_app_port)"
+  if [[ "$suggested_app_port" == "4000" ]]; then
+    warn "Host port 3000 is already in use. Suggested bot host port: 4000"
+  fi
+  prompt_var "APP_PORT" "Host app port mapping" "$suggested_app_port"
 
   prompt_var "ENABLE_NGINX" "Enable bundled NGINX + Certbot? (true/false)" "false"
   prompt_var "DOMAIN" "Domain for NGINX/HTTPS (if enabled)" "example.com"
