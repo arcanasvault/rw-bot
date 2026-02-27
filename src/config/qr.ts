@@ -1,6 +1,8 @@
 import { Options } from 'qr-code-styling';
+import { JSDOM } from 'jsdom';
 
 export const qrOptions: Options = {
+  jsdom: JSDOM,
   width: 700,
   height: 700,
   margin: 20,

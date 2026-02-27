@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { JSDOM } from 'jsdom';
 import { PaymentStatus } from '@prisma/client';
 import { env } from './config/env';
 import { logger } from './lib/logger';
@@ -16,6 +17,14 @@ app.use(express.urlencoded({ extended: true }));
 
 const bot = createBot();
 const webhookPath = env.WEBHOOK_PATH;
+
+// this is needed for the qr code
+const dom = new JSDOM(`<!DOCTYPE html><html><body></body></html>`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+global.window = dom.window as any;
+global.document = dom.window.document;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+global.self = dom.window as any;
 
 async function notifyAdmins(text: string): Promise<void> {
   for (const adminId of env.ADMIN_TG_ID_LIST) {
