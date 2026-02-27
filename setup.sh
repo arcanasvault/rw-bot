@@ -88,10 +88,10 @@ is_port_in_use() {
 }
 
 suggest_host_app_port() {
-  if is_port_in_use 3000; then
-    echo "4000"
+  if is_port_in_use 4000; then
+    echo "5000"
   else
-    echo "3000"
+    echo "4000"
   fi
 }
 
@@ -251,11 +251,11 @@ ensure_env_file() {
   prompt_var "MIN_WALLET_CHARGE_TOMANS" "Min wallet charge (Tomans)" "10000"
   prompt_var "MAX_WALLET_CHARGE_TOMANS" "Max wallet charge (Tomans)" "10000000"
 
-  prompt_var "PORT" "Container app port" "3000"
+  prompt_var "PORT" "Container app port" "4000"
   local suggested_app_port
   suggested_app_port="$(suggest_host_app_port)"
-  if [[ "$suggested_app_port" == "4000" ]]; then
-    warn "Host port 3000 is already in use. Suggested bot host port: 4000"
+  if [[ "$suggested_app_port" == "5000" ]]; then
+    warn "Host port 4000 is already in use. Suggested bot host port: 5000"
   fi
   prompt_var "APP_PORT" "Host app port mapping" "$suggested_app_port"
 
@@ -283,7 +283,7 @@ server {
     }
 
     location / {
-        proxy_pass http://app:3000;
+        proxy_pass http://app:4000;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -326,7 +326,7 @@ server {
     }
 
     location / {
-        proxy_pass http://app:3000;
+        proxy_pass http://app:4000;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -356,6 +356,8 @@ obtain_letsencrypt_certificate() {
 create_self_signed_certificate() {
   local domain="$1"
   local cert_dir="$NGINX_CERTS_DIR/live/$domain"
+
+cert_dir=/root/rw-bot/nginx/certs/live/plbot.ether.2bd.net
 
   mkdir -p "$cert_dir"
   openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
@@ -425,7 +427,7 @@ setup_nginx_certbot() {
 check_app_health() {
   local app_port
   app_port="$(read_env_value APP_PORT)"
-  app_port="${app_port:-3000}"
+  app_port="${app_port:-4000}"
 
   local i
   for i in {1..20}; do
@@ -540,7 +542,7 @@ server {
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:4000;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
