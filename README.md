@@ -112,12 +112,12 @@ ${APP_URL}/callback/tetra98
    - در صورت نیاز می‌توانید پورت دیگری وارد کنید.
 
 5. تنظیم NGINX برای ساب‌دامین ربات:
-   - یک ساب‌دامین جدا مثل `bot.ether.2bd.net` برای webhook ربات تنظیم کنید.
+   - یک ساب‌دامین جدا مثل `bot.domain.com` برای webhook ربات تنظیم کنید.
    - روی NGINX هاست یک server block جدا برای ربات اضافه کنید تا به پورت ربات (مثلا `4000`) پروکسی شود:
    ```nginx
    server {
        listen 80;
-       server_name bot.ether.2bd.net;
+       server_name bot.domain.com;
 
        location / {
            proxy_pass http://127.0.0.1:4000;
@@ -132,7 +132,7 @@ ${APP_URL}/callback/tetra98
    - اگر گواهی دامنه bot از قبل دارید، همان را استفاده کنید.
    - اگر ندارید، گواهی جدید بگیرید:
    ```bash
-   certbot --nginx -d bot.ether.2bd.net
+   certbot --nginx -d bot.domain.com
    ```
 
 6. اجرای نصب با اسکریپت:
@@ -144,7 +144,7 @@ ${APP_URL}/callback/tetra98
    - گزینه `1) Install / Setup` را بزنید.
    - هنگام Prompt ها:
      - `REMNAWAVE_URL` را `http://127.0.0.1:3000` بگذارید.
-     - `APP_URL` را دامنه HTTPS ربات بگذارید (مثلا `https://bot.ether.2bd.net`).
+     - `APP_URL` را دامنه HTTPS ربات بگذارید (مثلا `https://bot.domain.com`).
      - `WEBHOOK_PATH` را مقدار پیش‌فرض `/telegram/webhook` نگه دارید مگر اینکه عمدا تغییر داده باشید.
      - برای `APP_PORT` اگر `3000` اشغال است، مقدار پیشنهادی `4000` را قبول کنید.
 
