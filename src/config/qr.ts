@@ -15,12 +15,13 @@ export function buildQrOptions(data: string, logoUrl?: string): Options {
     },
     dotsOptions: {
       type: 'extra-rounded',
+      color: '#6a1a4c',
       gradient: {
         type: 'linear',
         rotation: Math.PI / 4,
         colorStops: [
-          { offset: 0, color: '#1d4ed8' },
-          { offset: 1, color: '#0f172a' },
+          { offset: 0, color: '#40138f' },
+          { offset: 1, color: '#120d36' },
         ],
       },
     },
@@ -30,8 +31,8 @@ export function buildQrOptions(data: string, logoUrl?: string): Options {
         type: 'linear',
         rotation: Math.PI / 8,
         colorStops: [
-          { offset: 0, color: '#0891b2' },
-          { offset: 1, color: '#1e3a8a' },
+          { offset: 0, color: '#120d36' },
+          { offset: 1, color: '#2d0f63' },
         ],
       },
     },
@@ -40,12 +41,12 @@ export function buildQrOptions(data: string, logoUrl?: string): Options {
       color: '#0f172a',
     },
     backgroundOptions: {
-      color: '#ffffff',
+      color: '#fefefe',
     },
     imageOptions: {
       crossOrigin: 'anonymous',
       margin: 8,
-      imageSize: 0.32,
+      imageSize: 0.4,
       saveAsBlob: true,
     },
   };
