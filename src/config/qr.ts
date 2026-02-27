@@ -1,11 +1,9 @@
 import { JSDOM } from 'jsdom';
 import type { Options } from 'qr-code-styling';
-import nodeCanvas from 'canvas';
 
 export function buildQrOptions(data: string, logoUrl?: string): Options {
   return {
     jsdom: JSDOM,
-    nodeCanvas,
     width: 820,
     height: 820,
     margin: 18,
