@@ -1,9 +1,11 @@
 import { JSDOM } from 'jsdom';
 import type { Options } from 'qr-code-styling';
+import nodeCanvas from 'canvas';
 
 export function buildQrOptions(data: string, logoUrl?: string): Options {
   return {
     jsdom: JSDOM,
+    nodeCanvas,
     width: 820,
     height: 820,
     margin: 18,
@@ -44,7 +46,7 @@ export function buildQrOptions(data: string, logoUrl?: string): Options {
       color: '#fefefe',
     },
     imageOptions: {
-      crossOrigin: 'anonymous',
+      // crossOrigin: 'anonymous',
       margin: 8,
       imageSize: 0.4,
       saveAsBlob: true,
