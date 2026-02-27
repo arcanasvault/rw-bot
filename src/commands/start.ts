@@ -465,7 +465,9 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
       }
 
       const qrCode = new QRCodeStyling({ ...qrOptions, data: qrSource });
-      const qrBuffer = (await qrCode.getRawData()) as Buffer<ArrayBufferLike>;
+      const qrBuffer = await qrCode
+        .getRawData('svg')
+        .then((buffer) => buffer as Buffer<ArrayBufferLike>);
 
       await ctx.replyWithPhoto(
         { source: qrBuffer },

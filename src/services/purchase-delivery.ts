@@ -97,7 +97,9 @@ export async function sendPurchaseAccessByPayment(
 
   try {
     const qrCode = new QRCodeStyling({ ...qrOptions, data: subscriptionUrl });
-    const qrBuffer = (await qrCode.getRawData()) as Buffer<ArrayBufferLike>;
+    const qrBuffer = await qrCode
+      .getRawData('svg')
+      .then((buffer) => buffer as Buffer<ArrayBufferLike>);
 
     const serviceTrafficInGb = bytesToGb(service.trafficLimitBytes);
     const serviceDays = Math.max(0, daysLeft(service.expireAt));
