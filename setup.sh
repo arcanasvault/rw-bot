@@ -95,6 +95,22 @@ suggest_host_app_port() {
   fi
 }
 
+suggest_nginx_http_port() {
+  if is_port_in_use 80; then
+    echo "8080"
+  else
+    echo "80"
+  fi
+}
+
+suggest_nginx_https_port() {
+  if is_port_in_use 443; then
+    echo "8443"
+  else
+    echo "443"
+  fi
+}
+
 install_prerequisites() {
   command -v apt-get >/dev/null 2>&1 || die "This installer supports Ubuntu/Debian (apt-get) only."
 
@@ -262,6 +278,17 @@ ensure_env_file() {
   prompt_var "ENABLE_NGINX" "Enable bundled NGINX + Certbot? (true/false)" "false"
   prompt_var "DOMAIN" "Domain for NGINX/HTTPS (if enabled)" "example.com"
   prompt_var "LETSENCRYPT_EMAIL" "Let's Encrypt email (if enabled)" "admin@example.com"
+  local suggested_nginx_http_port suggested_nginx_https_port
+  suggested_nginx_http_port="$(suggest_nginx_http_port)"
+  suggested_nginx_https_port="$(suggest_nginx_https_port)"
+  if [[ "$suggested_nginx_http_port" == "8080" ]]; then
+    warn "Host port 80 is already in use. Suggested NGINX HTTP port: 8080"
+  fi
+  if [[ "$suggested_nginx_https_port" == "8443" ]]; then
+    warn "Host port 443 is already in use. Suggested NGINX HTTPS port: 8443 (Telegram supported)"
+  fi
+  prompt_var "NGINX_HTTP_PORT" "Bundled NGINX host HTTP port" "$suggested_nginx_http_port"
+  prompt_var "NGINX_HTTPS_PORT" "Bundled NGINX host HTTPS port" "$suggested_nginx_https_port"
 
   chmod 700 "$env_file"
   log ".env secured with chmod 700"
@@ -391,9 +418,11 @@ setup_cert_renew_cron() {
 
 setup_nginx_certbot() {
   ensure_env_exists
-  local domain email
+  local domain email nginx_https_port
   domain="$(read_env_value DOMAIN)"
   email="$(read_env_value LETSENCRYPT_EMAIL)"
+  nginx_https_port="$(read_env_value NGINX_HTTPS_PORT)"
+  nginx_https_port="${nginx_https_port:-443}"
 
   [[ -n "$domain" ]] || die "DOMAIN is required for NGINX setup"
   [[ -n "$email" ]] || die "LETSENCRYPT_EMAIL is required for NGINX setup"
@@ -418,7 +447,13 @@ setup_nginx_certbot() {
   reload_nginx_service
   setup_cert_renew_cron
 
-  upsert_env "APP_URL" "https://$domain"
+  if [[ "$nginx_https_port" == "443" ]]; then
+    upsert_env "APP_URL" "https://$domain"
+  else
+    upsert_env "APP_URL" "https://$domain:$nginx_https_port"
+    warn "Bundled NGINX HTTPS fallback port is $nginx_https_port. APP_URL set with explicit port."
+    warn "If you prefer standard 443, disable bundled NGINX and proxy via existing host NGINX."
+  fi
   upsert_env "ENABLE_NGINX" "true"
 
   log "NGINX + HTTPS setup complete"
@@ -562,6 +597,24 @@ install_setup() {
   require_cmd awk
 
   ensure_env_file
+
+  local nginx_http_port nginx_https_port
+  nginx_http_port="$(read_env_value NGINX_HTTP_PORT)"
+  nginx_https_port="$(read_env_value NGINX_HTTPS_PORT)"
+  nginx_http_port="${nginx_http_port:-80}"
+  nginx_https_port="${nginx_https_port:-443}"
+
+  if [[ "$nginx_http_port" == "80" ]] && is_port_in_use 80; then
+    upsert_env "NGINX_HTTP_PORT" "8080"
+    warn "Port 80 is in use. Auto-switched NGINX_HTTP_PORT to 8080."
+    warn "You can disable bundled NGINX and use your existing host NGINX instead."
+  fi
+
+  if [[ "$nginx_https_port" == "443" ]] && is_port_in_use 443; then
+    upsert_env "NGINX_HTTPS_PORT" "8443"
+    warn "Port 443 is in use. Auto-switched NGINX_HTTPS_PORT to 8443."
+    warn "Telegram supports webhook on 8443. APP_URL will include :8443 when bundled NGINX is enabled."
+  fi
 
   local enable_nginx
   enable_nginx="$(read_env_value ENABLE_NGINX)"
