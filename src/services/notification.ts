@@ -52,7 +52,7 @@ export function startNotificationCron(bot: Telegraf<BotContext>): void {
           if (remainGb <= notifyGbLeft || remainDays <= notifyDaysLeft) {
             await bot.telegram.sendMessage(
               Number(service.user.telegramId),
-              `از سرویس شما با نام ${service.name} فقط ${Math.floor(remainGb)} گیگابایت / ${Math.max(remainDays, 0)} روز باقی مانده است`,
+              `⏰ از سرویس شما با نام ${service.name} فقط ${Math.floor(remainGb)} گیگابایت / ${Math.max(remainDays, 0)} روز باقی مانده است`,
             );
           }
         } catch (error) {

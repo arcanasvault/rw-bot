@@ -1,44 +1,52 @@
-import { Options } from 'qr-code-styling';
 import { JSDOM } from 'jsdom';
+import type { Options } from 'qr-code-styling';
 
-export const qrOptions: Options = {
-  jsdom: JSDOM,
-  width: 700,
-  height: 700,
-  margin: 20,
-  type: 'svg',
-  image: './qr.svg',
-  dotsOptions: {
-    type: 'extra-rounded',
-    color: '#6a1a4c',
-    roundSize: true,
-    gradient: {
-      type: 'radial',
-      rotation: 0,
-      colorStops: [
-        { offset: 0, color: '#40138f' },
-        { offset: 1, color: '#120d36' },
-      ],
+export function buildQrOptions(data: string, logoUrl?: string): Options {
+  return {
+    jsdom: JSDOM,
+    width: 820,
+    height: 820,
+    margin: 18,
+    type: 'svg',
+    data,
+    image: logoUrl || undefined,
+    qrOptions: {
+      errorCorrectionLevel: 'Q',
     },
-  },
-  cornersSquareOptions: {
-    type: 'dot',
-    color: '#000000',
-    gradient: {
-      type: 'linear',
-      rotation: 0,
-      colorStops: [
-        { offset: 0, color: '#120d36' },
-        { offset: 1, color: '#2d0f63' },
-      ],
+    dotsOptions: {
+      type: 'extra-rounded',
+      gradient: {
+        type: 'linear',
+        rotation: Math.PI / 4,
+        colorStops: [
+          { offset: 0, color: '#1d4ed8' },
+          { offset: 1, color: '#0f172a' },
+        ],
+      },
     },
-  },
-  backgroundOptions: {
-    color: '#fefefe',
-  },
-  imageOptions: {
-    crossOrigin: 'anonymous',
-    margin: 10,
-    imageSize: 0.5,
-  },
-};
+    cornersSquareOptions: {
+      type: 'extra-rounded',
+      gradient: {
+        type: 'linear',
+        rotation: Math.PI / 8,
+        colorStops: [
+          { offset: 0, color: '#0891b2' },
+          { offset: 1, color: '#1e3a8a' },
+        ],
+      },
+    },
+    cornersDotOptions: {
+      type: 'dot',
+      color: '#0f172a',
+    },
+    backgroundOptions: {
+      color: '#ffffff',
+    },
+    imageOptions: {
+      crossOrigin: 'anonymous',
+      margin: 8,
+      imageSize: 0.32,
+      saveAsBlob: true,
+    },
+  };
+}

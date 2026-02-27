@@ -14,11 +14,11 @@ export function mainMenuKeyboard() {
 
 export async function showMainMenu(
   ctx: BotContext,
-  text = `سلام 👋 به ربات آرکانا خوش آمدید.
+  text = `🚀 سلام 👋 به ربات آرکانا خوش آمدید.
 
 یادتون نره توی کانال @arcanair عوض بشید.
 
-تست رایگان بگیرید و در صورت رضایت، در عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
+🎁 تست رایگان بگیرید و در صورت رضایت، در عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
 ): Promise<void> {
   await ctx.reply(text, {
     reply_markup: mainMenuKeyboard().reply_markup,

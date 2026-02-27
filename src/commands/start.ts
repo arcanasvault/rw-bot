@@ -8,8 +8,7 @@ import { formatTomans } from '../utils/currency';
 import { bytesToGb, daysLeft } from '../utils/format';
 import { fa } from '../utils/farsi';
 import { showMainMenu } from './common';
-import QRCodeStyling from 'qr-code-styling';
-import { qrOptions } from '../config/qr';
+import { generateQrPngBuffer } from '../services/qr-generator';
 
 const START_BURST_WINDOW_MS = 15_000;
 const START_BURST_LIMIT = 5;
@@ -128,9 +127,10 @@ async function showWallet(ctx: BotContext): Promise<void> {
     return;
   }
 
-  await ctx.reply(`موجودی کیف پول شما: ${formatTomans(user.walletBalanceTomans)}`, {
-    reply_markup: Markup.inlineKeyboard([[Markup.button.callback('شارژ کیف پول', 'wallet_charge')]])
-      .reply_markup,
+  await ctx.reply(`💸 موجودی کیف پول شما: ${formatTomans(user.walletBalanceTomans)}`, {
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback('💳 شارژ کیف پول', 'wallet_charge')],
+    ]).reply_markup,
   });
 }
 
@@ -212,10 +212,10 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
   if (!user || user.services.length === 0) {
     if (editCurrentMessage) {
       await ctx.answerCbQuery();
-      await ctx.reply('شما سرویس خریداری شده‌ای ندارید');
+      await ctx.reply('📭 شما سرویس خریداری شده‌ای ندارید');
       return;
     }
-    await ctx.reply('شما سرویس خریداری شده‌ای ندارید');
+    await ctx.reply('📭 شما سرویس خریداری شده‌ای ندارید');
     return;
   }
 
@@ -246,14 +246,14 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
   );
 
   if (editCurrentMessage && 'editMessageText' in ctx) {
-    await ctx.editMessageText('سرویس‌های شما:', {
+    await ctx.editMessageText('📍 سرویس‌های شما:', {
       reply_markup: keyboard.reply_markup,
     });
     await ctx.answerCbQuery();
     return;
   }
 
-  await ctx.reply('سرویس‌های شما:', {
+  await ctx.reply('📍 سرویس‌های شما:', {
     reply_markup: keyboard.reply_markup,
   });
 }
@@ -265,7 +265,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     }
 
     if (isStartBurstLimited(ctx.from.id)) {
-      await ctx.reply('تعداد درخواست /start شما زیاد است. لطفا چند ثانیه دیگر تلاش کنید.');
+      await ctx.reply('⏳ تعداد درخواست /start شما زیاد است. لطفا چند ثانیه دیگر تلاش کنید.');
       return;
     }
 
@@ -299,14 +299,14 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
           answer: captcha.answer,
           verified: false,
         };
-        await ctx.reply(`برای تایید هویت عدد را ارسال کنید:\n${captcha.question}`);
+        await ctx.reply(`🧠 برای تایید هویت عدد را ارسال کنید:\n${captcha.question}`);
         return;
       }
 
       await showMainMenu(ctx);
     } catch (error) {
       logger.error(`/start failed user=${ctx.from.id} error=${String(error)}`);
-      await ctx.reply('در ثبت نام یا بارگذاری منو خطا رخ داد. لطفا دوباره تلاش کنید.');
+      await ctx.reply('⚠️ در ثبت نام یا بارگذاری منو خطا رخ داد. لطفا دوباره تلاش کنید.');
     }
   });
 
@@ -330,7 +330,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     const serviceId = ctx.match[1];
     const service = await getOwnedService(ctx.from.id, serviceId);
     if (!service) {
-      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
       return;
     }
 
@@ -362,14 +362,14 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     const remainDays = Math.max(0, daysLeft(expireAt));
 
     await ctx.editMessageText(
-      `سرویس: ${service.name}\nحجم باقیمانده: ${remainGb} گیگابایت\nروز باقی مانده: ${remainDays}`,
+      `🔮 سرویس: ${service.name}\n🌐 حجم باقیمانده: ${remainGb} گیگابایت\n⏰ روز باقی مانده: ${remainDays}`,
       {
         reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('لینک هوشمند', `svc:smart:${service.id}`)],
-          [Markup.button.callback('اشتراک QR', `svc:qr:${service.id}`)],
-          [Markup.button.callback('لینک اضطراری', `svc:emergency:${service.id}`)],
-          [Markup.button.callback('تمدید سرویس', `svc:renew:${service.id}`)],
-          [Markup.button.callback('بازگشت', SERVICES_BACK_CB)],
+          [Markup.button.callback('🔗 لینک هوشمند', `svc:smart:${service.id}`)],
+          [Markup.button.callback('📱 اشتراک QR', `svc:qr:${service.id}`)],
+          [Markup.button.callback('🆘 لینک اضطراری', `svc:emergency:${service.id}`)],
+          [Markup.button.callback('🔄 تمدید سرویس', `svc:renew:${service.id}`)],
+          [Markup.button.callback('🔙 بازگشت', SERVICES_BACK_CB)],
         ]).reply_markup,
       },
     );
@@ -384,7 +384,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
     const service = await getOwnedService(ctx.from.id, ctx.match[1]);
     if (!service) {
-      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
       return;
     }
 
@@ -395,7 +395,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
       const smart = parsed.smartLink ?? parsed.base64;
 
       if (!smart) {
-        await ctx.reply('لینک هوشمند برای این سرویس یافت نشد.');
+        await ctx.reply('⚠️ لینک هوشمند برای این سرویس یافت نشد.');
         return;
       }
 
@@ -404,10 +404,10 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
         data: { subscriptionUrl: parsed.smartLink ?? service.subscriptionUrl },
       });
 
-      await ctx.reply(`لینک هوشمند:\n${smart}`);
+      await ctx.reply(`🔗 لینک هوشمند:\n${smart}`);
     } catch (error) {
       logger.error(`smart-link fetch failed service=${service.id} error=${String(error)}`);
-      await ctx.reply('دریافت لینک هوشمند ناموفق بود.');
+      await ctx.reply('❌ دریافت لینک هوشمند ناموفق بود.');
     }
   });
 
@@ -418,7 +418,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
     const service = await getOwnedService(ctx.from.id, ctx.match[1]);
     if (!service) {
-      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
       return;
     }
 
@@ -428,17 +428,17 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
       const parsed = extractSubscriptionData(remote);
 
       if (!parsed.emergencyLinks.length) {
-        await ctx.reply('لینک اضطراری برای این سرویس یافت نشد.');
+        await ctx.reply('⚠️ لینک اضطراری برای این سرویس یافت نشد.');
         return;
       }
 
-      await ctx.reply(`لینک‌های اضطراری ${service.name}:`);
+      await ctx.reply(`🆘 لینک‌های اضطراری ${service.name}:`);
       for (const link of parsed.emergencyLinks) {
         await ctx.reply(link);
       }
     } catch (error) {
       logger.error(`emergency-links fetch failed service=${service.id} error=${String(error)}`);
-      await ctx.reply('دریافت لینک اضطراری ناموفق بود.');
+      await ctx.reply('❌ دریافت لینک اضطراری ناموفق بود.');
     }
   });
 
@@ -449,7 +449,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
     const service = await getOwnedService(ctx.from.id, ctx.match[1]);
     if (!service) {
-      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
       return;
     }
 
@@ -460,24 +460,24 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
       const qrSource = parsed.smartLink ?? parsed.emergencyLinks[0] ?? parsed.base64;
 
       if (!qrSource) {
-        await ctx.reply('داده‌ای برای ساخت QR یافت نشد.');
+        await ctx.reply('⚠️ داده‌ای برای ساخت QR یافت نشد.');
         return;
       }
 
-      const qrCode = new QRCodeStyling({ ...qrOptions, data: qrSource });
-      const qrBuffer = await qrCode
-        .getRawData('svg')
-        .then((buffer) => buffer as Buffer<ArrayBufferLike>);
+      const qrBuffer = await generateQrPngBuffer({
+        data: qrSource,
+        telegramId: ctx.from.id,
+      });
 
       await ctx.replyWithPhoto(
         { source: qrBuffer },
         {
-          caption: `QR اشتراک سرویس ${service.name}`,
+          caption: '📱 کد QR اشتراک شما',
         },
       );
     } catch (error) {
-      logger.error(`subscription-qr failed service=${service.id} error=${String(error)}`);
-      await ctx.reply('ساخت QR ناموفق بود.');
+      logger.error(`Failed to generate QR for user ${ctx.from.id}: ${String(error)}`);
+      await ctx.reply('❌ ساخت QR ناموفق بود.');
     }
   });
 
@@ -488,19 +488,19 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
     const service = await getOwnedServiceWithPlan(ctx.from.id, ctx.match[1]);
     if (!service) {
-      await ctx.answerCbQuery('سرویس نامعتبر است.');
+      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
       return;
     }
 
     if (!service.plan) {
       await ctx.answerCbQuery();
-      await ctx.reply('برای این سرویس امکان تمدید وجود ندارد.');
+      await ctx.reply('⚠️ برای این سرویس امکان تمدید وجود ندارد.');
       return;
     }
 
     await ctx.answerCbQuery();
     await ctx.reply(
-      `تمدید سرویس ${service.name}\nمبلغ: ${formatTomans(service.plan.priceTomans)}\nروش پرداخت را انتخاب کنید.`,
+      `🔄 تمدید سرویس ${service.name}\n💰 مبلغ: ${formatTomans(service.plan.priceTomans)}\n💳 روش پرداخت را انتخاب کنید.`,
     );
     await ctx.scene.enter('renew-wizard', { serviceId: service.id });
   });
@@ -510,7 +510,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
   });
 
   bot.command('hidemenu', async (ctx) => {
-    await ctx.reply('منو مخفی شد.', {
+    await ctx.reply('🙈 منو مخفی شد.', {
       reply_markup: {
         remove_keyboard: true,
       },
@@ -518,7 +518,7 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
   });
 
   bot.command('showmenu', async (ctx) => {
-    await showMainMenu(ctx, 'منوی اصلی نمایش داده شد.');
+    await showMainMenu(ctx, '📋 منوی اصلی نمایش داده شد.');
   });
 
   bot.hears(fa.menu.support, async (ctx) => {
@@ -526,9 +526,9 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     const supportHandle = setting?.supportHandle ?? env.ADMIN_TG_HANDLE;
     const handle = supportHandle.startsWith('@') ? supportHandle.slice(1) : supportHandle;
 
-    await ctx.reply('برای پشتیبانی روی دکمه زیر بزنید:', {
+    await ctx.reply('👤 برای پشتیبانی روی دکمه زیر بزنید:', {
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.url('پشتیبانی', `https://t.me/${handle}`)],
+        [Markup.button.url('👤 پشتیبانی', `https://t.me/${handle}`)],
       ]).reply_markup,
     });
   });
@@ -541,10 +541,10 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
     if ((ctx.message.text ?? '').trim() === ctx.session.captcha.answer) {
       ctx.session.captcha.verified = true;
-      await showMainMenu(ctx, 'تایید انجام شد.');
+      await showMainMenu(ctx, '✅ تایید انجام شد.');
       return;
     }
 
-    await ctx.reply('پاسخ اشتباه است. دوباره تلاش کنید.');
+    await ctx.reply('❌ پاسخ اشتباه است. دوباره تلاش کنید.');
   });
 }

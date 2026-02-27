@@ -26,7 +26,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       });
 
       if (!preSelected || !preSelected.plan) {
-        await ctx.reply('سرویس برای تمدید معتبر نیست.');
+        await ctx.reply('⚠️ سرویس برای تمدید معتبر نیست.');
         return ctx.scene.leave();
       }
 
@@ -45,20 +45,20 @@ const scene = new Scenes.WizardScene<BotContext>(
       const tetraEnabled = setting?.enableTetra98 ?? true;
       const manualEnabled = setting?.enableManualPayment ?? true;
       const paymentButtons = [
-        [Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')],
+        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
       ];
       if (tetraEnabled) {
         paymentButtons.push([
-          Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
+          Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
         ]);
       }
       if (manualEnabled) {
         paymentButtons.push([
-          Markup.button.callback('پرداخت کارت به کارت', 'renew_gateway:manual'),
+          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
         ]);
       }
 
-      await ctx.reply(`مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
+      await ctx.reply(`💰 مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
         reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
       });
       ctx.wizard.selectStep(2);
@@ -77,7 +77,7 @@ const scene = new Scenes.WizardScene<BotContext>(
     });
 
     if (!user || user.services.length === 0) {
-      await ctx.reply('شما سرویس فعالی برای تمدید ندارید.');
+      await ctx.reply('📭 شما سرویس فعالی برای تمدید ندارید.');
       return ctx.scene.leave();
     }
 
@@ -91,11 +91,11 @@ const scene = new Scenes.WizardScene<BotContext>(
       );
 
     if (buttons.length === 0) {
-      await ctx.reply('برای سرویس های تست امکان تمدید وجود ندارد.');
+      await ctx.reply('⚠️ برای سرویس‌های تست امکان تمدید وجود ندارد.');
       return ctx.scene.leave();
     }
 
-    await ctx.reply('سرویس مورد نظر برای تمدید را انتخاب کنید:', {
+    await ctx.reply('🔄 سرویس مورد نظر برای تمدید را انتخاب کنید:', {
       reply_markup: Markup.inlineKeyboard(buttons, { columns: 1 }).reply_markup,
     });
 
@@ -110,7 +110,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       });
 
       if (!service || !service.plan) {
-        await ctx.answerCbQuery('سرویس نامعتبر است');
+        await ctx.answerCbQuery('⚠️ سرویس نامعتبر است');
         return;
       }
 
@@ -130,26 +130,26 @@ const scene = new Scenes.WizardScene<BotContext>(
       const tetraEnabled = setting?.enableTetra98 ?? true;
       const manualEnabled = setting?.enableManualPayment ?? true;
       const paymentButtons = [
-        [Markup.button.callback('پرداخت از کیف پول', 'renew_gateway:wallet')],
+        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
       ];
       if (tetraEnabled) {
         paymentButtons.push([
-          Markup.button.callback('پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
+          Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
         ]);
       }
       if (manualEnabled) {
         paymentButtons.push([
-          Markup.button.callback('پرداخت کارت به کارت', 'renew_gateway:manual'),
+          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
         ]);
       }
 
-      await ctx.reply(`مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
+      await ctx.reply(`💰 مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
         reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
       });
       return ctx.wizard.next();
     })
     .on('callback_query', async (ctx) => {
-      await ctx.answerCbQuery('ابتدا سرویس را انتخاب کنید');
+      await ctx.answerCbQuery('🔎 ابتدا سرویس را انتخاب کنید');
     }),
   new Composer<BotContext>()
     .action(/^renew_gateway:(wallet|tetra|manual)$/, async (ctx) => {
@@ -159,7 +159,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
       const state = ctx.wizard.state as RenewWizardState;
       if (!state.serviceId) {
-        await ctx.answerCbQuery('اطلاعات تمدید ناقص است');
+        await ctx.answerCbQuery('⚠️ اطلاعات تمدید ناقص است');
         return ctx.scene.leave();
       }
 
@@ -201,14 +201,14 @@ const scene = new Scenes.WizardScene<BotContext>(
 
         if (gateway === PaymentGateway.WALLET) {
           await ctx.answerCbQuery();
-          await ctx.reply('تمدید با موفقیت انجام شد.');
+          await ctx.reply('✅ تمدید با موفقیت انجام شد.');
           return ctx.scene.leave();
         }
 
         if (gateway === PaymentGateway.TETRA98) {
           const order = await paymentOrchestrator.createTetra98Order(payment.id);
           await ctx.answerCbQuery();
-          await ctx.reply(`برای پرداخت روی لینک زیر بزنید:\n${order.link}`);
+          await ctx.reply(`🌐 برای پرداخت روی لینک زیر بزنید:\n${order.link}`);
           return ctx.scene.leave();
         }
 
@@ -217,36 +217,36 @@ const scene = new Scenes.WizardScene<BotContext>(
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.reply(
-          `لطفا مبلغ ${formatTomans(payment.amountTomans)} را به کارت ${cardNumber} واریز کنید و عکس رسید را ارسال کنید.`,
+          `💳 لطفا مبلغ ${formatTomans(payment.amountTomans)} را به کارت ${cardNumber} واریز کنید و عکس رسید را ارسال کنید.`,
         );
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : 'خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();
       }
     })
     .on('callback_query', async (ctx) => {
-      await ctx.answerCbQuery('روش پرداخت را انتخاب کنید');
+      await ctx.answerCbQuery('💳 روش پرداخت را انتخاب کنید');
     }),
   async (ctx) => {
     const paymentId = ctx.session.pendingManualPaymentId;
 
     if (!paymentId) {
-      await ctx.reply('درخواست پرداخت دستی یافت نشد.');
+      await ctx.reply('⚠️ درخواست پرداخت دستی یافت نشد.');
       return ctx.scene.leave();
     }
 
     if (ctx?.message && 'text' in ctx.message && ctx.message.text.trim() === 'لغو') {
       ctx.session.pendingManualPaymentId = undefined;
-      await ctx.reply('درخواست شما لغو شد.');
+      await ctx.reply('🛑 درخواست شما لغو شد.');
       return ctx.scene.leave();
     }
 
     if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
-      await ctx.reply('لطفا عکس رسید را ارسال کنید.');
+      await ctx.reply('📷 لطفا عکس رسید را ارسال کنید.');
       return;
     }
 
@@ -261,17 +261,17 @@ const scene = new Scenes.WizardScene<BotContext>(
     if (payment) {
       for (const adminId of env.ADMIN_TG_ID_LIST) {
         await ctx.telegram.sendPhoto(adminId, fileId, {
-          caption: `رسید تمدید ثبت شد\nپرداخت: ${payment.id}\nکاربر: ${payment.user.telegramId.toString()}\nمبلغ: ${formatTomans(payment.amountTomans)}`,
+          caption: `🧾 رسید تمدید ثبت شد\n💳 پرداخت: ${payment.id}\n👤 کاربر: ${payment.user.telegramId.toString()}\n💰 مبلغ: ${formatTomans(payment.amountTomans)}`,
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('تایید', `manual_approve:${payment.id}`)],
-            [Markup.button.callback('رد', `manual_deny:${payment.id}`)],
+            [Markup.button.callback('✅ تایید', `manual_approve:${payment.id}`)],
+            [Markup.button.callback('🚫 رد', `manual_deny:${payment.id}`)],
           ]).reply_markup,
         });
       }
     }
 
     ctx.session.pendingManualPaymentId = undefined;
-    await ctx.reply('رسید شما ثبت شد. پس از بررسی ادمین اطلاع رسانی می شود.');
+    await ctx.reply('✅ رسید شما ثبت شد. پس از بررسی ادمین اطلاع رسانی می‌شود.');
     return ctx.scene.leave();
   },
 );

@@ -71,10 +71,10 @@ app.post('/callback/tetra98', async (req: Request, res: Response) => {
       await paymentOrchestrator.markPaymentFailed(payment.id, 'وضعیت اولیه callback موفق نبود');
       await bot.telegram.sendMessage(
         Number(payment.user.telegramId),
-        'پرداخت شما ناموفق بود. در صورت کسر وجه با پشتیبانی تماس بگیرید.',
+        '❌ پرداخت شما ناموفق بود. در صورت کسر وجه با پشتیبانی تماس بگیرید.',
       );
       await notifyAdmins(
-        `پرداخت ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
+        `❌ پرداخت ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
       );
       res.status(200).json({ ok: false });
       return;
@@ -86,10 +86,10 @@ app.post('/callback/tetra98', async (req: Request, res: Response) => {
       await paymentOrchestrator.markPaymentFailed(payment.id, 'verify تترا98 ناموفق بود');
       await bot.telegram.sendMessage(
         Number(payment.user.telegramId),
-        'تایید پرداخت انجام نشد. با پشتیبانی تماس بگیرید.',
+        '⚠️ تایید پرداخت انجام نشد. با پشتیبانی تماس بگیرید.',
       );
       await notifyAdmins(
-        `verify ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
+        `❌ verify ناموفق تترا98: ${payment.id} | user=${payment.user.telegramId.toString()}`,
       );
       res.status(200).json({ ok: false });
       return;
@@ -101,18 +101,18 @@ app.post('/callback/tetra98', async (req: Request, res: Response) => {
     } else {
       await bot.telegram.sendMessage(
         Number(payment.user.telegramId),
-        'پرداخت شما با موفقیت تایید شد و سرویس/کیف پول بروزرسانی شد.',
+        '✅ پرداخت شما با موفقیت تایید شد و سرویس/کیف پول بروزرسانی شد.',
       );
     }
     res.status(200).json({ ok: true });
   } catch (error) {
     logger.error(`callback tetra98 failed: ${String(error)}`);
-    await notifyAdmins(`خطا در callback تترا98: ${String(error)}`);
+    await notifyAdmins(`⚠️ خطا در callback تترا98: ${String(error)}`);
     if (callbackUserTelegramId) {
       await bot.telegram
         .sendMessage(
           callbackUserTelegramId,
-          'پرداخت شما با خطا مواجه شد. لطفا با پشتیبانی تماس بگیرید.',
+          '⚠️ پرداخت شما با خطا مواجه شد. لطفا با پشتیبانی تماس بگیرید.',
         )
         .catch(() => undefined);
     }

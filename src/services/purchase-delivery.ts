@@ -4,8 +4,7 @@ import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { remnawaveService } from './remnawave';
 import { bytesToGb, daysLeft } from '../utils/format';
-import QRCodeStyling from 'qr-code-styling';
-import { qrOptions } from '../config/qr';
+import { generateQrPngBuffer } from './qr-generator';
 
 function parseServiceName(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -54,13 +53,14 @@ export async function sendPurchaseAccessByPayment(
       isTest: false,
       ...(serviceName ? { name: serviceName } : {}),
     },
+    include: { plan: true },
     orderBy: { createdAt: 'desc' },
   });
 
   if (!service) {
     await telegram.sendMessage(
       Number(payment.user.telegramId),
-      'پرداخت شما با موفقیت تایید شد. برای دریافت کانفیگ از «سرویس‌های من» استفاده کنید.',
+      '✅ پرداخت شما با موفقیت تایید شد. برای دریافت کانفیگ از «سرویس‌های من» استفاده کنید.',
     );
     return;
   }
@@ -84,31 +84,34 @@ export async function sendPurchaseAccessByPayment(
 
   await telegram.sendMessage(
     Number(payment.user.telegramId),
-    `سرویس شما با موفقیت خریداری شد.\nنام سرویس: ${service.name}`,
+    `🎉 سرویس شما با موفقیت خریداری شد.\n🔮 نام سرویس: ${service.name}`,
   );
 
   if (!subscriptionUrl) {
     await telegram.sendMessage(
       Number(payment.user.telegramId),
-      'لینک اشتراک فعلا در دسترس نیست. از بخش «سرویس‌های من» دوباره بررسی کنید.',
+      '⚠️ لینک اشتراک فعلا در دسترس نیست. از بخش «سرویس‌های من» دوباره بررسی کنید.',
     );
     return;
   }
 
   try {
-    const qrCode = new QRCodeStyling({ ...qrOptions, data: subscriptionUrl });
-    const qrBuffer = await qrCode
-      .getRawData('svg')
-      .then((buffer) => buffer as Buffer<ArrayBufferLike>);
+    const qrBuffer = await generateQrPngBuffer({
+      data: subscriptionUrl,
+      telegramId: Number(payment.user.telegramId),
+    });
 
-    const serviceTrafficInGb = bytesToGb(service.trafficLimitBytes);
-    const serviceDays = Math.max(0, daysLeft(service.expireAt));
+    const serviceTrafficInGb = Math.floor(bytesToGb(service.trafficLimitBytes));
+    const serviceDays =
+      service.plan?.durationDays ?? Math.max(0, daysLeft(service.expireAt));
 
-    const serviceDetailsCaption = `🔮 نام سرویس: ${service.name}
-🔗 لینک هوشمند:\n ${subscriptionUrl}\n
-🌐 حجم: ${serviceTrafficInGb}GB
-🗓 زمان باقی‌مانده: ${serviceDays} روز
-`;
+    const serviceDetailsCaption = [
+      '📱 کد QR اشتراک شما',
+      `🔮 سرویس: ${service.name}`,
+      `🌐 حجم: ${serviceTrafficInGb} گیگابایت`,
+      `🗓 مدت: ${serviceDays} روز`,
+      `🔗 لینک اشتراک: ${subscriptionUrl}`,
+    ].join('\n');
 
     await telegram.sendPhoto(
       Number(payment.user.telegramId),
@@ -118,6 +121,6 @@ export async function sendPurchaseAccessByPayment(
       },
     );
   } catch (error) {
-    logger.warn(`purchase delivery qr failed service=${service.id} error=${String(error)}`);
+    logger.error(`Failed to generate QR for user ${payment.user.telegramId.toString()}: ${String(error)}`);
   }
 }

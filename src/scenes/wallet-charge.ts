@@ -12,25 +12,25 @@ const scene = new Scenes.WizardScene<BotContext>(
   'wallet-charge-wizard',
   async (ctx) => {
     await ctx.reply(
-      `مبلغ شارژ را به تومان وارد کنید. حداقل ${formatTomans(env.MIN_WALLET_CHARGE_TOMANS)} و حداکثر ${formatTomans(env.MAX_WALLET_CHARGE_TOMANS)}`,
+      `💸 مبلغ شارژ را به تومان وارد کنید. حداقل ${formatTomans(env.MIN_WALLET_CHARGE_TOMANS)} و حداکثر ${formatTomans(env.MAX_WALLET_CHARGE_TOMANS)}`,
     );
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('مبلغ را به صورت عدد ارسال کنید.');
+      await ctx.reply('🔢 مبلغ را به صورت عدد ارسال کنید.');
       return;
     }
 
     const amount = Number(ctx.message.text.replace(/,/g, '').trim());
 
     if (!Number.isFinite(amount) || !Number.isInteger(amount)) {
-      await ctx.reply('مبلغ وارد شده معتبر نیست.');
+      await ctx.reply('⚠️ مبلغ وارد شده معتبر نیست.');
       return;
     }
 
     if (amount < env.MIN_WALLET_CHARGE_TOMANS || amount > env.MAX_WALLET_CHARGE_TOMANS) {
-      await ctx.reply('مبلغ خارج از بازه مجاز است.');
+      await ctx.reply('⚠️ مبلغ خارج از بازه مجاز است.');
       return;
     }
 
@@ -51,14 +51,18 @@ const scene = new Scenes.WizardScene<BotContext>(
     const paymentButtons = [];
 
     if (tetraEnabled) {
-      paymentButtons.push([Markup.button.callback('پرداخت آنلاین تترا98', 'wallet_gateway:tetra')]);
+      paymentButtons.push([
+        Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'wallet_gateway:tetra'),
+      ]);
     }
     if (manualEnabled) {
-      paymentButtons.push([Markup.button.callback('پرداخت کارت به کارت', 'wallet_gateway:manual')]);
+      paymentButtons.push([
+        Markup.button.callback('💳 پرداخت کارت به کارت', 'wallet_gateway:manual'),
+      ]);
     }
 
     await ctx.reply(
-      `مبلغ ${formatTomans(amount)} برای شارژ کیف پول تایید شد. روش پرداخت را انتخاب کنید:`,
+      `✅ مبلغ ${formatTomans(amount)} برای شارژ کیف پول تایید شد. روش پرداخت را انتخاب کنید:`,
       {
         reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
       },
@@ -74,7 +78,7 @@ const scene = new Scenes.WizardScene<BotContext>(
 
       const state = ctx.wizard.state as WalletWizardState;
       if (!state.amountTomans) {
-        await ctx.answerCbQuery('اطلاعات پرداخت ناقص است');
+        await ctx.answerCbQuery('⚠️ اطلاعات پرداخت ناقص است');
         return ctx.scene.leave();
       }
 
@@ -90,7 +94,7 @@ const scene = new Scenes.WizardScene<BotContext>(
         if (gateway === PaymentGateway.TETRA98) {
           const order = await paymentOrchestrator.createTetra98Order(payment.id);
           await ctx.answerCbQuery();
-          await ctx.reply(`برای پرداخت روی لینک زیر بزنید:\n${order.link}`);
+          await ctx.reply(`🌐 برای پرداخت روی لینک زیر بزنید:\n${order.link}`);
           return ctx.scene.leave();
         }
 
@@ -99,36 +103,36 @@ const scene = new Scenes.WizardScene<BotContext>(
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.reply(
-          `لطفا مبلغ ${formatTomans(payment.amountTomans)} را به کارت ${cardNumber} واریز کنید و عکس رسید را ارسال کنید.`,
+          `💳 لطفا مبلغ ${formatTomans(payment.amountTomans)} را به کارت ${cardNumber} واریز کنید و عکس رسید را ارسال کنید.`,
         );
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : 'خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();
       }
     })
     .on('callback_query', async (ctx) => {
-      await ctx.answerCbQuery('روش پرداخت را انتخاب کنید');
+      await ctx.answerCbQuery('💳 روش پرداخت را انتخاب کنید');
     }),
   async (ctx) => {
     const paymentId = ctx.session.pendingManualPaymentId;
 
     if (!paymentId) {
-      await ctx.reply('درخواست پرداخت دستی یافت نشد.');
+      await ctx.reply('⚠️ درخواست پرداخت دستی یافت نشد.');
       return ctx.scene.leave();
     }
 
     if (ctx?.message && 'text' in ctx.message && ctx.message.text.trim() === 'لغو') {
       ctx.session.pendingManualPaymentId = undefined;
-      await ctx.reply('درخواست شما لغو شد.');
+      await ctx.reply('🛑 درخواست شما لغو شد.');
       return ctx.scene.leave();
     }
 
     if (!ctx.message || !('photo' in ctx.message) || !ctx.message.photo.length) {
-      await ctx.reply('لطفا عکس رسید را ارسال کنید. برای انصراف، کلمه "لغو" را ارسال کنید.');
+      await ctx.reply('📷 لطفا عکس رسید را ارسال کنید. برای انصراف، کلمه "لغو" را ارسال کنید.');
       return;
     }
 
@@ -143,17 +147,17 @@ const scene = new Scenes.WizardScene<BotContext>(
     if (payment) {
       for (const adminId of env.ADMIN_TG_ID_LIST) {
         await ctx.telegram.sendPhoto(adminId, fileId, {
-          caption: `رسید شارژ کیف پول ثبت شد\nپرداخت: ${payment.id}\nکاربر: ${payment.user.telegramId.toString()}\nمبلغ: ${formatTomans(payment.amountTomans)}`,
+          caption: `🧾 رسید شارژ کیف پول ثبت شد\n💳 پرداخت: ${payment.id}\n👤 کاربر: ${payment.user.telegramId.toString()}\n💰 مبلغ: ${formatTomans(payment.amountTomans)}`,
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('تایید', `manual_approve:${payment.id}`)],
-            [Markup.button.callback('رد', `manual_deny:${payment.id}`)],
+            [Markup.button.callback('✅ تایید', `manual_approve:${payment.id}`)],
+            [Markup.button.callback('🚫 رد', `manual_deny:${payment.id}`)],
           ]).reply_markup,
         });
       }
     }
 
     ctx.session.pendingManualPaymentId = undefined;
-    await ctx.reply('رسید شما ثبت شد. پس از بررسی ادمین اطلاع رسانی می شود.');
+    await ctx.reply('✅ رسید شما ثبت شد. پس از بررسی ادمین اطلاع رسانی می‌شود.');
     return ctx.scene.leave();
   },
 );

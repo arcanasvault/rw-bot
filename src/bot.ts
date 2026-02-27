@@ -69,7 +69,7 @@ export function createBot(): Telegraf<BotContext> {
       window: 1000,
       limit: 4,
       onLimitExceeded: (ctx) => {
-        void ctx.reply('درخواست های شما بیش از حد سریع است. چند ثانیه صبر کنید.');
+        void ctx.reply('⏱️ درخواست‌های شما بیش از حد سریع است. چند ثانیه صبر کنید.');
       },
     }),
   );
@@ -124,15 +124,15 @@ export function createBot(): Telegraf<BotContext> {
     try {
       const result = await paymentOrchestrator.createTestSubscription(ctx.from.id);
       await ctx.reply(
-        `سرویس تست با نام ${result.serviceName} فعال شد.\nلینک اشتراک:\n${result.subscriptionUrl}`,
+        `🎁 سرویس تست با نام ${result.serviceName} فعال شد.\n🔗 لینک اشتراک:\n${result.subscriptionUrl}`,
       );
     } catch (error) {
       if (error instanceof AppError && error.code === 'TEST_DISABLED') {
-        await ctx.reply('در حال حاضر سرویس تست ارائه نمی‌شود');
+        await ctx.reply('🚫 در حال حاضر سرویس تست ارائه نمی‌شود');
         return;
       }
 
-      const message = error instanceof AppError ? error.message : 'خطا در ایجاد سرویس تست';
+      const message = error instanceof AppError ? error.message : '❌ خطا در ایجاد سرویس تست';
       await ctx.reply(message);
     }
   });
@@ -143,7 +143,7 @@ export function createBot(): Telegraf<BotContext> {
   });
 
   bot.on('callback_query', async (ctx) => {
-    await ctx.answerCbQuery('این گزینه منقضی شده یا نامعتبر است.').catch(() => undefined);
+    await ctx.answerCbQuery('⚠️ این گزینه منقضی شده یا نامعتبر است.').catch(() => undefined);
   });
 
   bot.catch((error) => {

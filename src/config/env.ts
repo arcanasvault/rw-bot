@@ -19,6 +19,10 @@ const envSchema = z.object({
   REMNAWAVE_URL: z.string().url(),
   REMNAWAVE_TOKEN: z.string().min(10),
   DEFAULT_INTERNAL_SQUAD_ID: z.string().min(1).default('1'),
+  LOGO_URL: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim().length === 0 ? undefined : value),
+    z.string().url().optional(),
+  ),
   TETRA98_API_KEY: z.string().min(10),
   MANUAL_CARD_NUMBER: z.string().min(8),
   MIN_WALLET_CHARGE_TOMANS: z.coerce.number().int().positive().default(10000),

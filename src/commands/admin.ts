@@ -104,11 +104,11 @@ async function sendStats(ctx: BotContext): Promise<void> {
 
   await ctx.reply(
     [
-      `تعداد کاربران: ${usersCount}`,
-      `تعداد سرویس ها: ${servicesCount}`,
-      `اشتراک فعال: ${activeSubsCount}`,
-      `فروش کل: ${formatTomans(totalSales)}`,
-      `رسید در انتظار بررسی: ${pendingManualCount}`,
+      `👥 تعداد کاربران: ${usersCount}`,
+      `📦 تعداد سرویس ها: ${servicesCount}`,
+      `🟢 اشتراک فعال: ${activeSubsCount}`,
+      `💰 فروش کل: ${formatTomans(totalSales)}`,
+      `🧾 رسید در انتظار بررسی: ${pendingManualCount}`,
     ].join('\n'),
   );
 }
@@ -116,21 +116,21 @@ async function sendStats(ctx: BotContext): Promise<void> {
 export function registerAdminCommands(bot: Telegraf<BotContext>): void {
   bot.command('admin', async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.reply('این دستور فقط برای ادمین است.');
+      await ctx.reply('🔐 این دستور فقط برای ادمین است.');
       return;
     }
 
-    await ctx.reply('پنل ادمین', {
+    await ctx.reply('🛠️ پنل ادمین', {
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('آمار کلی', 'admin_stats')],
-        [Markup.button.callback('پرداخت های دستی', 'admin_manuals')],
-        [Markup.button.callback('لیست پلن ها', 'admin_plans')],
+        [Markup.button.callback('📊 آمار کلی', 'admin_stats')],
+        [Markup.button.callback('🧾 پرداخت های دستی', 'admin_manuals')],
+        [Markup.button.callback('🧩 لیست پلن ها', 'admin_plans')],
       ]).reply_markup,
     });
 
     await ctx.reply(
       [
-        'دستورات ادمین:',
+        '📋 دستورات ادمین:',
         '/stats',
         '/users 20',
         '/services 20',
@@ -160,7 +160,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
   bot.action('admin_stats', async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.answerCbQuery('دسترسی ندارید');
+      await ctx.answerCbQuery('⛔ دسترسی ندارید');
       return;
     }
 
@@ -188,7 +188,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!users.length) {
-      await ctx.reply('کاربری یافت نشد.');
+      await ctx.reply('📭 کاربری یافت نشد.');
       return;
     }
 
@@ -213,7 +213,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!services.length) {
-      await ctx.reply('سرویسی یافت نشد.');
+      await ctx.reply('📭 سرویسی یافت نشد.');
       return;
     }
 
@@ -238,7 +238,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!payments.length) {
-      await ctx.reply('پرداختی یافت نشد.');
+      await ctx.reply('📭 پرداختی یافت نشد.');
       return;
     }
 
@@ -258,7 +258,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const args = getArgs(ctx.message.text);
     const tgId = Number(args[0]);
     if (!tgId) {
-      await ctx.reply('فرمت درست: /ban <tg_id>');
+      await ctx.reply('🧾 فرمت درست: /ban <tg_id>');
       return;
     }
 
@@ -267,7 +267,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { isBanned: true },
     });
 
-    await ctx.reply('کاربر بن شد.');
+    await ctx.reply('🚫 کاربر بن شد.');
   });
 
   bot.command('unban', async (ctx) => {
@@ -278,7 +278,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const args = getArgs(ctx.message.text);
     const tgId = Number(args[0]);
     if (!tgId) {
-      await ctx.reply('فرمت درست: /unban <tg_id>');
+      await ctx.reply('🧾 فرمت درست: /unban <tg_id>');
       return;
     }
 
@@ -287,7 +287,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { isBanned: false },
     });
 
-    await ctx.reply('بن کاربر برداشته شد.');
+    await ctx.reply('✅ بن کاربر برداشته شد.');
   });
 
   bot.command('wallet', async (ctx) => {
@@ -300,13 +300,13 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const amount = Number(args[1]);
 
     if (!tgId || !Number.isInteger(amount) || amount === 0) {
-      await ctx.reply('فرمت درست: /wallet <tg_id> <amount> (مثال: +50000 یا -30000)');
+      await ctx.reply('🧾 فرمت درست: /wallet <tg_id> <amount> (مثال: +50000 یا -30000)');
       return;
     }
 
     const user = await prisma.user.findUnique({ where: { telegramId: BigInt(tgId) } });
     if (!user) {
-      await ctx.reply('کاربر پیدا نشد.');
+      await ctx.reply('⚠️ کاربر پیدا نشد.');
       return;
     }
 
@@ -327,11 +327,11 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         });
       }
     } catch (error) {
-      await ctx.reply(`خطا در بروزرسانی کیف پول: ${String(error)}`);
+      await ctx.reply(`❌ خطا در بروزرسانی کیف پول: ${String(error)}`);
       return;
     }
 
-    await ctx.reply('کیف پول کاربر بروزرسانی شد.');
+    await ctx.reply('✅ کیف پول کاربر بروزرسانی شد.');
   });
 
   bot.command('manuals', async (ctx) => {
@@ -350,17 +350,17 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!pending.length) {
-      await ctx.reply('رسید در انتظار بررسی وجود ندارد.');
+      await ctx.reply('📭 رسید در انتظار بررسی وجود ندارد.');
       return;
     }
 
     for (const payment of pending) {
       await ctx.reply(
-        `پرداخت: ${payment.id}\nکاربر: ${payment.user.telegramId.toString()}\nمبلغ: ${formatTomans(payment.amountTomans)}`,
+        `🧾 پرداخت: ${payment.id}\n👤 کاربر: ${payment.user.telegramId.toString()}\n💰 مبلغ: ${formatTomans(payment.amountTomans)}`,
         {
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('تایید', `manual_approve:${payment.id}`)],
-            [Markup.button.callback('رد', `manual_deny:${payment.id}`)],
+            [Markup.button.callback('✅ تایید', `manual_approve:${payment.id}`)],
+            [Markup.button.callback('🚫 رد', `manual_deny:${payment.id}`)],
           ]).reply_markup,
         },
       );
@@ -369,17 +369,17 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
   bot.action('admin_manuals', async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.answerCbQuery('دسترسی ندارید');
+      await ctx.answerCbQuery('⛔ دسترسی ندارید');
       return;
     }
 
     await ctx.answerCbQuery();
-    await ctx.reply('/manuals را اجرا کنید یا از همین لیست پایین استفاده کنید.');
+    await ctx.reply('📋 /manuals را اجرا کنید یا از همین لیست پایین استفاده کنید.');
   });
 
   bot.action('admin_plans', async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.answerCbQuery('دسترسی ندارید');
+      await ctx.answerCbQuery('⛔ دسترسی ندارید');
       return;
     }
 
@@ -387,7 +387,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.answerCbQuery();
 
     if (!plans.length) {
-      await ctx.reply('پلنی وجود ندارد.');
+      await ctx.reply('📭 پلنی وجود ندارد.');
       return;
     }
 
@@ -403,14 +403,14 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
   bot.action(/^manual_approve:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.answerCbQuery('دسترسی ندارید');
+      await ctx.answerCbQuery('⛔ دسترسی ندارید');
       return;
     }
 
     const paymentId = ctx.match[1];
     const adminUserId = await ensureAdminUser(ctx);
     if (!adminUserId) {
-      await ctx.answerCbQuery('خطا');
+      await ctx.answerCbQuery('❌ خطا');
       return;
     }
 
@@ -420,7 +420,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!payment || payment.status !== PaymentStatus.WAITING_REVIEW) {
-      await ctx.answerCbQuery('پرداخت قابل تایید نیست');
+      await ctx.answerCbQuery('⚠️ پرداخت قابل تایید نیست');
       return;
     }
 
@@ -434,36 +434,36 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         },
       });
 
-      await ctx.answerCbQuery('تایید شد');
+      await ctx.answerCbQuery('✅ تایید شد');
       if (payment.type === PaymentType.PURCHASE) {
         await sendPurchaseAccessByPayment(ctx.telegram, payment.id);
       } else {
         await ctx.telegram.sendMessage(
           Number(payment.user.telegramId),
-          'پرداخت شما تایید شد و سرویس/کیف پول بروزرسانی شد.',
+          '✅ پرداخت شما تایید شد و سرویس/کیف پول بروزرسانی شد.',
         );
       }
     } catch (error) {
       logger.error(`manual approve failed paymentId=${payment.id} error=${String(error)}`);
-      await ctx.answerCbQuery('خطا در تایید');
-      await ctx.reply('خطا در تایید پرداخت. وضعیت پرداخت به ناموفق تغییر کرد.');
+      await ctx.answerCbQuery('❌ خطا در تایید');
+      await ctx.reply('❌ خطا در تایید پرداخت. وضعیت پرداخت به ناموفق تغییر کرد.');
       await ctx.telegram.sendMessage(
         Number(payment.user.telegramId),
-        'پرداخت شما با خطا مواجه شد. لطفا با پشتیبانی تماس بگیرید.',
+        '⚠️ پرداخت شما با خطا مواجه شد. لطفا با پشتیبانی تماس بگیرید.',
       );
     }
   });
 
   bot.action(/^manual_deny:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.answerCbQuery('دسترسی ندارید');
+      await ctx.answerCbQuery('⛔ دسترسی ندارید');
       return;
     }
 
     const paymentId = ctx.match[1];
     const adminUserId = await ensureAdminUser(ctx);
     if (!adminUserId) {
-      await ctx.answerCbQuery('خطا');
+      await ctx.answerCbQuery('❌ خطا');
       return;
     }
 
@@ -473,15 +473,15 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     if (!payment || payment.status !== PaymentStatus.WAITING_REVIEW) {
-      await ctx.answerCbQuery('پرداخت قابل رد نیست');
+      await ctx.answerCbQuery('⚠️ پرداخت قابل رد نیست');
       return;
     }
 
     await paymentOrchestrator.rejectManualPayment(payment.id, adminUserId, 'رد دستی توسط ادمین');
-    await ctx.answerCbQuery('رد شد');
+    await ctx.answerCbQuery('🚫 رد شد');
     await ctx.telegram.sendMessage(
       Number(payment.user.telegramId),
-      'رسید شما رد شد. با پشتیبانی تماس بگیرید.',
+      '🚫 رسید شما رد شد. با پشتیبانی تماس بگیرید.',
     );
   });
 
@@ -492,12 +492,12 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const text = getTextAfterCommand(ctx.message.text);
     if (!text) {
-      await ctx.reply('فرمت درست: /broadcast <message>');
+      await ctx.reply('🧾 فرمت درست: /broadcast <message>');
       return;
     }
 
     if (text.length > 4000) {
-      await ctx.reply('متن پیام همگانی بیش از حد طولانی است.');
+      await ctx.reply('⚠️ متن پیام همگانی بیش از حد طولانی است.');
       return;
     }
 
@@ -518,7 +518,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       }
     }
 
-    await ctx.reply(`ارسال همگانی انجام شد. موفق: ${success} | ناموفق: ${failed}`);
+    await ctx.reply(`📣 ارسال همگانی انجام شد. موفق: ${success} | ناموفق: ${failed}`);
   });
 
   bot.command('plans', async (ctx) => {
@@ -529,7 +529,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const plans = await prisma.plan.findMany({ orderBy: { createdAt: 'desc' } });
 
     if (!plans.length) {
-      await ctx.reply('پلنی وجود ندارد.');
+      await ctx.reply('📭 پلنی وجود ندارد.');
       return;
     }
 
@@ -566,15 +566,15 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const id = getArgs(ctx.message.text)[0];
     if (!id) {
-      await ctx.reply('فرمت درست: /delplan <plan_id>');
+      await ctx.reply('🧾 فرمت درست: /delplan <plan_id>');
       return;
     }
 
     try {
       await prisma.plan.delete({ where: { id } });
-      await ctx.reply('پلن حذف شد.');
+      await ctx.reply('✅ پلن حذف شد.');
     } catch {
-      await ctx.reply('حذف پلن ناموفق بود.');
+      await ctx.reply('❌ حذف پلن ناموفق بود.');
     }
   });
 
@@ -588,7 +588,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const days = asPositiveFloat(daysRaw);
 
     if (!trafficGb || !days) {
-      await ctx.reply('فرمت درست: /settest <traffic_gb> <days>');
+      await ctx.reply('🧾 فرمت درست: /settest <traffic_gb> <days>');
       return;
     }
 
@@ -605,7 +605,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       },
     });
 
-    await ctx.reply('تنظیمات سرویس تست بروزرسانی شد.');
+    await ctx.reply('✅ تنظیمات سرویس تست بروزرسانی شد.');
   });
 
   bot.command('settestinternalsquad', async (ctx) => {
@@ -615,7 +615,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const squadIds = getArgs(ctx.message.text).join(' ').replace(/\s+/g, '');
     if (!squadIds) {
-      await ctx.reply('فرمت درست: /settestinternalsquad <id(s)>');
+      await ctx.reply('🧾 فرمت درست: /settestinternalsquad <id(s)>');
       return;
     }
 
@@ -625,7 +625,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       create: { id: 1, testInternalSquadId: squadIds },
     });
 
-    await ctx.reply('internal squad تست بروزرسانی شد.');
+    await ctx.reply('✅ internal squad تست بروزرسانی شد.');
   });
 
   bot.command('testtoggle', async (ctx) => {
@@ -635,7 +635,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const mode = getArgs(ctx.message.text)[0];
     if (!['on', 'off'].includes(mode ?? '')) {
-      await ctx.reply('فرمت درست: /testtoggle <on|off>');
+      await ctx.reply('🧾 فرمت درست: /testtoggle <on|off>');
       return;
     }
 
@@ -645,7 +645,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       create: { id: 1, testEnabled: mode === 'on' },
     });
 
-    await ctx.reply(mode === 'on' ? 'سرویس تست فعال شد.' : 'سرویس تست غیرفعال شد.');
+    await ctx.reply(mode === 'on' ? '✅ سرویس تست فعال شد.' : '🚫 سرویس تست غیرفعال شد.');
   });
 
   bot.command('resettest', async (ctx) => {
@@ -655,7 +655,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const tgId = Number(getArgs(ctx.message.text)[0]);
     if (!tgId) {
-      await ctx.reply('فرمت درست: /resettest <tg_id>');
+      await ctx.reply('🧾 فرمت درست: /resettest <tg_id>');
       return;
     }
 
@@ -664,7 +664,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { usedTestSubscription: false },
     });
 
-    await ctx.reply('وضعیت تست کاربر ریست شد.');
+    await ctx.reply('✅ وضعیت تست کاربر ریست شد.');
   });
 
   bot.command('resetalltests', async (ctx) => {
@@ -676,7 +676,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { usedTestSubscription: false },
     });
 
-    await ctx.reply(`وضعیت تست همه کاربران ریست شد. تعداد: ${result.count}`);
+    await ctx.reply(`✅ وضعیت تست همه کاربران ریست شد. تعداد: ${result.count}`);
   });
 
   bot.command('togglemanual', async (ctx) => {
@@ -696,7 +696,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     await ctx.reply(
-      updated.enableManualPayment ? 'پرداخت دستی فعال شد.' : 'پرداخت دستی غیرفعال شد.',
+      updated.enableManualPayment ? '✅ پرداخت دستی فعال شد.' : '🚫 پرداخت دستی غیرفعال شد.',
     );
   });
 
@@ -716,7 +716,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { enableTetra98: !setting.enableTetra98 },
     });
 
-    await ctx.reply(updated.enableTetra98 ? 'پرداخت تترا98 فعال شد.' : 'پرداخت تترا98 غیرفعال شد.');
+    await ctx.reply(updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.');
   });
 
   bot.command('setnotify', async (ctx) => {
@@ -729,7 +729,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const gb = asPositiveInt(gbRaw);
 
     if (!days || !gb) {
-      await ctx.reply('فرمت درست: /setnotify <days> <gb>');
+      await ctx.reply('🧾 فرمت درست: /setnotify <days> <gb>');
       return;
     }
 
@@ -746,7 +746,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       },
     });
 
-    await ctx.reply('آستانه اعلان بروزرسانی شد.');
+    await ctx.reply('✅ آستانه اعلان بروزرسانی شد.');
   });
 
   bot.command('setaffiliate', async (ctx) => {
@@ -758,12 +758,12 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     const value = asPositiveInt(valueRaw);
 
     if (!['fixed', 'percent'].includes(typeRaw ?? '') || !value) {
-      await ctx.reply('فرمت درست: /setaffiliate <fixed|percent> <value>');
+      await ctx.reply('🧾 فرمت درست: /setaffiliate <fixed|percent> <value>');
       return;
     }
 
     if (typeRaw === 'percent' && value > 100) {
-      await ctx.reply('در حالت درصد، مقدار باید حداکثر 100 باشد.');
+      await ctx.reply('⚠️ در حالت درصد، مقدار باید حداکثر 100 باشد.');
       return;
     }
 
@@ -782,7 +782,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       },
     });
 
-    await ctx.reply('تنظیمات همکاری فروش بروزرسانی شد.');
+    await ctx.reply('✅ تنظیمات همکاری فروش بروزرسانی شد.');
   });
 
   bot.command('promoadd', async (ctx) => {
@@ -808,7 +808,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       fixed < 0 ||
       percent > 100
     ) {
-      await ctx.reply('فرمت درست: /promoadd code|percent|fixed|uses');
+      await ctx.reply('🧾 فرمت درست: /promoadd code|percent|fixed|uses');
       return;
     }
 
@@ -823,9 +823,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         },
       });
 
-      await ctx.reply('کد تخفیف ثبت شد.');
+      await ctx.reply('✅ کد تخفیف ثبت شد.');
     } catch {
-      await ctx.reply('ثبت کد تخفیف ناموفق بود. ممکن است کد تکراری باشد.');
+      await ctx.reply('❌ ثبت کد تخفیف ناموفق بود. ممکن است کد تکراری باشد.');
     }
   });
 }

@@ -30,90 +30,90 @@ const scene = new Scenes.WizardScene<BotContext>(
   'admin-add-plan-wizard',
   async (ctx) => {
     if (!isAdmin(ctx)) {
-      await ctx.reply('این دستور فقط برای ادمین است.');
+      await ctx.reply('🔐 این دستور فقط برای ادمین است.');
       return ctx.scene.leave();
     }
 
-    await ctx.reply('نام سیستمی پلن را وارد کنید (فقط انگلیسی/عدد/خط تیره):');
+    await ctx.reply('🧩 نام سیستمی پلن را وارد کنید (فقط انگلیسی/عدد/خط تیره):');
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('متن معتبر ارسال کنید.');
+      await ctx.reply('⚠️ متن معتبر ارسال کنید.');
       return;
     }
 
     const parsed = nameSchema.safeParse(ctx.message.text);
     if (!parsed.success) {
-      await ctx.reply('نام پلن نامعتبر است. مثال: gold-plan');
+      await ctx.reply('⚠️ نام پلن نامعتبر است. مثال: gold-plan');
       return;
     }
 
     const state = ctx.wizard.state as AdminAddPlanWizardState;
     state.name = parsed.data;
-    await ctx.reply('displayName پلن برای کاربر را وارد کنید (مثال: پلن طلایی):');
+    await ctx.reply('📝 displayName پلن برای کاربر را وارد کنید (مثال: پلن طلایی):');
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('متن معتبر ارسال کنید.');
+      await ctx.reply('⚠️ متن معتبر ارسال کنید.');
       return;
     }
 
     const parsed = displayNameSchema.safeParse(ctx.message.text);
     if (!parsed.success) {
-      await ctx.reply('displayName نامعتبر است.');
+      await ctx.reply('⚠️ displayName نامعتبر است.');
       return;
     }
 
     const state = ctx.wizard.state as AdminAddPlanWizardState;
     state.displayName = parsed.data;
-    await ctx.reply('مقدار trafficGb را وارد کنید (عدد اعشاری مجاز است):');
+    await ctx.reply('🌐 مقدار trafficGb را وارد کنید (عدد اعشاری مجاز است):');
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('عدد معتبر ارسال کنید.');
+      await ctx.reply('🔢 عدد معتبر ارسال کنید.');
       return;
     }
 
     const parsed = positiveFloatSchema.safeParse(ctx.message.text);
     if (!parsed.success) {
-      await ctx.reply('trafficGb باید عدد مثبت باشد.');
+      await ctx.reply('⚠️ trafficGb باید عدد مثبت باشد.');
       return;
     }
 
     const state = ctx.wizard.state as AdminAddPlanWizardState;
     state.trafficGb = parsed.data;
-    await ctx.reply('مقدار durationDays را وارد کنید (عدد اعشاری مجاز است):');
+    await ctx.reply('🗓 مقدار durationDays را وارد کنید (عدد اعشاری مجاز است):');
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('عدد معتبر ارسال کنید.');
+      await ctx.reply('🔢 عدد معتبر ارسال کنید.');
       return;
     }
 
     const parsed = positiveFloatSchema.safeParse(ctx.message.text);
     if (!parsed.success) {
-      await ctx.reply('durationDays باید عدد مثبت باشد.');
+      await ctx.reply('⚠️ durationDays باید عدد مثبت باشد.');
       return;
     }
 
     const state = ctx.wizard.state as AdminAddPlanWizardState;
     state.durationDays = parsed.data;
-    await ctx.reply('priceTomans را وارد کنید (عدد صحیح):');
+    await ctx.reply('💰 priceTomans را وارد کنید (عدد صحیح):');
     return ctx.wizard.next();
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('عدد معتبر ارسال کنید.');
+      await ctx.reply('🔢 عدد معتبر ارسال کنید.');
       return;
     }
 
     const parsed = positiveIntSchema.safeParse(ctx.message.text);
     if (!parsed.success) {
-      await ctx.reply('priceTomans باید عدد صحیح مثبت باشد.');
+      await ctx.reply('⚠️ priceTomans باید عدد صحیح مثبت باشد.');
       return;
     }
 
@@ -124,13 +124,13 @@ const scene = new Scenes.WizardScene<BotContext>(
   },
   async (ctx) => {
     if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('مقدار معتبر ارسال کنید.');
+      await ctx.reply('⚠️ مقدار معتبر ارسال کنید.');
       return;
     }
 
     const parsed = internalSquadSchema.safeParse(ctx.message.text.replace(/\s+/g, ''));
     if (!parsed.success) {
-      await ctx.reply('internalSquadId نامعتبر است. مثال: 1,2,3');
+      await ctx.reply('⚠️ internalSquadId نامعتبر است. مثال: 1,2,3');
       return;
     }
 
@@ -145,7 +145,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       !state.priceTomans ||
       !state.internalSquadId
     ) {
-      await ctx.reply('اطلاعات پلن ناقص است.');
+      await ctx.reply('⚠️ اطلاعات پلن ناقص است.');
       return ctx.scene.leave();
     }
 
@@ -162,9 +162,9 @@ const scene = new Scenes.WizardScene<BotContext>(
         },
       });
 
-      await ctx.reply('پلن با موفقیت ایجاد شد.');
+      await ctx.reply('✅ پلن با موفقیت ایجاد شد.');
     } catch {
-      await ctx.reply('ایجاد پلن ناموفق بود. ممکن است name یا ترکیب پلن تکراری باشد.');
+      await ctx.reply('❌ ایجاد پلن ناموفق بود. ممکن است name یا ترکیب پلن تکراری باشد.');
     }
 
     return ctx.scene.leave();

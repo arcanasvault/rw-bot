@@ -26,7 +26,7 @@ export const ensureKnownUser: MiddlewareFn<BotContext> = async (ctx, next) => {
   });
 
   if (user.isBanned) {
-    await ctx.reply('دسترسی شما مسدود شده است.');
+    await ctx.reply('🚫 دسترسی شما مسدود شده است.');
     return;
   }
 
@@ -39,7 +39,7 @@ export const ensureAdmin: MiddlewareFn<BotContext> = async (ctx, next) => {
   }
 
   if (!env.ADMIN_TG_ID_LIST.includes(ctx.from.id)) {
-    await ctx.reply('این دستور فقط برای ادمین است.');
+    await ctx.reply('🔐 این دستور فقط برای ادمین است.');
     return;
   }
 
