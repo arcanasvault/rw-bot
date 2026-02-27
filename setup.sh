@@ -217,6 +217,7 @@ ensure_env_file() {
 
   prompt_var "REMNAWAVE_URL" "RemnaWave panel URL"
   prompt_var "REMNAWAVE_TOKEN" "RemnaWave API token" "" true
+  prompt_var "LOGO_PATH" "Local logo path for QR (absolute or project-relative)" "./logo.png"
 
   prompt_var "TETRA98_API_KEY" "Tetra98 API key" "" true
   prompt_var "MANUAL_CARD_NUMBER" "Manual card number"

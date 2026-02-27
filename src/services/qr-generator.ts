@@ -1,7 +1,7 @@
 import QRCodeStyling from 'qr-code-styling';
 import sharp from 'sharp';
-import axios from 'axios';
-import { env } from '../config/env';
+import fs from 'fs';
+import path from 'path';
 import { buildQrOptions } from '../config/qr';
 import { logger } from '../lib/logger';
 
@@ -15,31 +15,42 @@ function ensureBuffer(data: Buffer | Blob | null): Buffer {
   throw new Error('QR raw data is not a buffer');
 }
 
-function toContentType(value: unknown): string {
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
+function normalizeLogoPath(rawPath: string): string {
+  const expanded = rawPath
+    .replace(/\$\{PWD\}/g, process.cwd())
+    .replace(/^\$PWD/, process.cwd());
+
+  if (path.isAbsolute(expanded)) {
+    return expanded;
   }
-  if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
-    return value[0].trim();
-  }
-  return 'image/png';
+
+  return path.resolve(process.cwd(), expanded);
 }
 
-async function loadLogoBuffer(telegramId: number, logoUrl: string): Promise<Buffer | null> {
+async function loadLogoBuffer(
+  telegramId: number,
+  logoPath: string,
+): Promise<{ buffer: Buffer; resolvedPath: string } | null> {
+  const resolvedPath = normalizeLogoPath(logoPath);
+
   try {
-    const response = await axios.get<ArrayBuffer>(logoUrl, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-    });
-    const contentType = toContentType(response.headers['content-type']);
-    const raw = Buffer.from(response.data);
-    if (contentType.includes('svg')) {
-      return sharp(raw).png().toBuffer();
+    const raw = fs.readFileSync(resolvedPath);
+    const ext = path.extname(resolvedPath).toLowerCase();
+
+    if (ext === '.svg') {
+      return {
+        buffer: await sharp(raw).png().toBuffer(),
+        resolvedPath,
+      };
     }
-    return raw;
+
+    return {
+      buffer: raw,
+      resolvedPath,
+    };
   } catch (error) {
     logger.error(
-      `Failed to load logo for user ${telegramId}: ${String(error)} | path=${logoUrl}`,
+      `Failed to load logo for user ${telegramId}: ${String(error)} | path=${resolvedPath}`,
     );
     return null;
   }
@@ -49,7 +60,7 @@ async function applyCenteredLogo(input: {
   qrPng: Buffer;
   logoBuffer: Buffer;
   telegramId: number;
-  logoUrl: string;
+  logoPath: string;
 }): Promise<Buffer> {
   try {
     const qrMeta = await sharp(input.qrPng).metadata();
@@ -67,7 +78,7 @@ async function applyCenteredLogo(input: {
       .toBuffer();
   } catch (error) {
     logger.error(
-      `Failed to composite logo for user ${input.telegramId}: ${String(error)} | path=${input.logoUrl}`,
+      `Failed to composite logo for user ${input.telegramId}: ${String(error)} | path=${input.logoPath}`,
     );
     throw error;
   }
@@ -82,8 +93,8 @@ export async function generateQrPngBuffer(input: {
     throw new Error('QR source data is empty');
   }
 
-  const tryGenerate = async (logoImage?: string): Promise<Buffer> => {
-    const options = buildQrOptions(source, logoImage);
+  const tryGenerate = async (): Promise<Buffer> => {
+    const options = buildQrOptions(source);
     const qr = new QRCodeStyling(options);
     const svgRaw = ensureBuffer(await qr.getRawData('svg'));
     return sharp(svgRaw).png().toBuffer();
@@ -91,24 +102,25 @@ export async function generateQrPngBuffer(input: {
 
   try {
     const baseQr = await tryGenerate();
-    if (!env.LOGO_URL) {
+    const logoPath = process.env.LOGO_PATH?.trim();
+    if (!logoPath) {
       return baseQr;
     }
 
-    const logo = await loadLogoBuffer(input.telegramId, env.LOGO_URL);
+    const logo = await loadLogoBuffer(input.telegramId, logoPath);
     if (!logo) {
       return baseQr;
     }
 
     return await applyCenteredLogo({
       qrPng: baseQr,
-      logoBuffer: logo,
+      logoBuffer: logo.buffer,
       telegramId: input.telegramId,
-      logoUrl: env.LOGO_URL,
+      logoPath: logo.resolvedPath,
     });
   } catch (error) {
     logger.error(
-      `Failed to generate QR for user ${input.telegramId}: ${String(error)} | path=${env.LOGO_URL ?? 'none'}`,
+      `Failed to generate QR for user ${input.telegramId}: ${String(error)} | path=${process.env.LOGO_PATH ?? 'none'}`,
     );
     throw error;
   }
