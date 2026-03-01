@@ -9,6 +9,7 @@ import { AppError } from './errors/app-error';
 import { logger } from './lib/logger';
 import { ensureKnownUser } from './middlewares/auth';
 import { adminAddPlanWizardScene } from './scenes/admin-add-plan';
+import { adminAddPromoWizardScene } from './scenes/admin-add-promo';
 import { adminEditPlanWizardScene } from './scenes/admin-edit-plan';
 import { buyWizardScene } from './scenes/buy';
 import { renewWizardScene } from './scenes/renew';
@@ -58,6 +59,7 @@ export function createBot(): Telegraf<BotContext> {
 
   const stage = new Scenes.Stage<BotContext>([
     adminAddPlanWizardScene,
+    adminAddPromoWizardScene,
     adminEditPlanWizardScene,
     buyWizardScene,
     renewWizardScene,

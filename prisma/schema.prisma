@@ -40,6 +40,11 @@ enum AffiliateRewardType {
   PERCENT
 }
 
+enum PromoType {
+  PERCENT
+  FIXED
+}
+
 model User {
   id                        String              @id @default(cuid())
   telegramId                BigInt              @unique
@@ -123,7 +128,7 @@ model Payment {
   planId            String?
   plan              Plan?              @relation(fields: [planId], references: [id], onDelete: SetNull)
   promoCodeId       String?
-  promoCode         PromoCode?         @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  promoCode         Promo?             @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   manualReceiptFileId String?
   callbackPayload   Json?
   reviewedByAdminId String?
@@ -155,24 +160,25 @@ model WalletTransaction {
   @@index([userId])
 }
 
-model PromoCode {
-  id              String      @id @default(cuid())
-  code            String      @unique
-  discountPercent Int?
-  fixedTomans     Int?
-  usesLeft        Int
-  isActive        Boolean     @default(true)
-  expiresAt       DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  payments        Payment[]
-  usages          PromoUsage[]
+model Promo {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  type        PromoType
+  value       Int
+  maxUses     Int
+  currentUses Int        @default(0)
+  isActive    Boolean    @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  payments    Payment[]
+  usages      PromoUsage[]
 }
 
 model PromoUsage {
   id          String    @id @default(cuid())
   promoCodeId String
-  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  promoCode   Promo     @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   paymentId   String    @unique
@@ -193,8 +199,10 @@ model Setting {
   notifyGbLeft        Int                 @default(2)
   enableManualPayment Boolean             @default(true)
   enableTetra98       Boolean             @default(true)
-  enablePromos        Boolean             @default(false)
+  enablePromos        Boolean             @default(true)
   enableReferrals     Boolean             @default(false)
+  enableNewPurchases  Boolean             @default(true)
+  enableRenewals      Boolean             @default(true)
   affiliateRewardType AffiliateRewardType @default(FIXED)
   affiliateRewardValue Int                @default(10000)
   manualCardNumber    String?

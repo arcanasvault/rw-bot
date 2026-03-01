@@ -359,17 +359,25 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     const remainBytes = limitBytes > usedBytes ? limitBytes - usedBytes : BigInt(0);
     const remainGb = Math.floor(bytesToGb(remainBytes));
     const remainDays = Math.max(0, daysLeft(expireAt));
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableRenewals: true },
+    });
+    const renewalsEnabled = setting?.enableRenewals ?? true;
+    const detailButtons = [
+      [Markup.button.callback('🔗 لینک هوشمند', `svc:smart:${service.id}`)],
+      [Markup.button.callback('📱 اشتراک QR', `svc:qr:${service.id}`)],
+      [Markup.button.callback('🆘 لینک اضطراری', `svc:emergency:${service.id}`)],
+    ];
+    if (renewalsEnabled) {
+      detailButtons.push([Markup.button.callback('🔄 تمدید سرویس', `svc:renew:${service.id}`)]);
+    }
+    detailButtons.push([Markup.button.callback('🔙 بازگشت', SERVICES_BACK_CB)]);
 
     await ctx.editMessageText(
       `🔮 سرویس: ${service.name}\n🌐 حجم باقیمانده: ${remainGb} گیگابایت\n⏰ روز باقی مانده: ${remainDays}`,
       {
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('🔗 لینک هوشمند', `svc:smart:${service.id}`)],
-          [Markup.button.callback('📱 اشتراک QR', `svc:qr:${service.id}`)],
-          [Markup.button.callback('🆘 لینک اضطراری', `svc:emergency:${service.id}`)],
-          [Markup.button.callback('🔄 تمدید سرویس', `svc:renew:${service.id}`)],
-          [Markup.button.callback('🔙 بازگشت', SERVICES_BACK_CB)],
-        ]).reply_markup,
+        reply_markup: Markup.inlineKeyboard(detailButtons).reply_markup,
       },
     );
 
@@ -482,6 +490,15 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
 
   bot.action(/^svc:renew:(.+)$/, async (ctx) => {
     if (!ctx.from) {
+      return;
+    }
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableRenewals: true },
+    });
+    if (setting && !setting.enableRenewals) {
+      await ctx.answerCbQuery();
+      await ctx.reply('🚫 در حال حاضر تمدید غیرفعال است.');
       return;
     }
 

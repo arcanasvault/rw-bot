@@ -15,6 +15,15 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableRenewals: true },
+    });
+    if (setting && !setting.enableRenewals) {
+      await ctx.reply('🚫 در حال حاضر تمدید غیرفعال است.');
+      return ctx.scene.leave();
+    }
+
     const sceneState = (ctx.scene.state ?? {}) as { serviceId?: string };
     if (sceneState.serviceId) {
       const preSelected = await prisma.service.findFirst({
@@ -34,33 +43,7 @@ const scene = new Scenes.WizardScene<BotContext>(
       state.serviceId = preSelected.id;
       state.planId = preSelected.plan.id;
       state.planPriceTomans = preSelected.plan.priceTomans;
-
-      const setting = await prisma.setting.findUnique({
-        where: { id: 1 },
-        select: {
-          enableTetra98: true,
-          enableManualPayment: true,
-        },
-      });
-      const tetraEnabled = setting?.enableTetra98 ?? true;
-      const manualEnabled = setting?.enableManualPayment ?? true;
-      const paymentButtons = [
-        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
-      ];
-      if (tetraEnabled) {
-        paymentButtons.push([
-          Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
-        ]);
-      }
-      if (manualEnabled) {
-        paymentButtons.push([
-          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
-        ]);
-      }
-
-      await ctx.reply(`💰 مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
-        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-      });
+      await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
       ctx.wizard.selectStep(2);
       return;
     }
@@ -120,6 +103,37 @@ const scene = new Scenes.WizardScene<BotContext>(
       state.planPriceTomans = service.plan.priceTomans;
 
       await ctx.answerCbQuery();
+      await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
+      return ctx.wizard.next();
+    })
+    .on('callback_query', async (ctx) => {
+      await ctx.answerCbQuery('🔎 ابتدا سرویس را انتخاب کنید');
+    }),
+  async (ctx) => {
+    if (!ctx.message || !('text' in ctx.message) || !ctx.from) {
+      await ctx.reply('✍️ لطفا کد تخفیف را متنی ارسال کنید یا "-" بفرستید.');
+      return;
+    }
+
+    const state = ctx.wizard.state as RenewWizardState;
+    if (!state.serviceId) {
+      await ctx.reply('⚠️ اطلاعات تمدید ناقص است.');
+      return ctx.scene.leave();
+    }
+
+    const promoCode = ctx.message.text.trim();
+    state.promoCode = promoCode === '-' ? undefined : promoCode;
+
+    try {
+      const preview = await paymentOrchestrator.createRenewPaymentPreview({
+        telegramId: ctx.from.id,
+        serviceId: state.serviceId,
+        promoCode: state.promoCode,
+      });
+
+      state.finalAmountTomans = preview.finalAmountTomans;
+      state.promoCode = preview.appliedPromoCode ?? undefined;
+
       const setting = await prisma.setting.findUnique({
         where: { id: 1 },
         select: {
@@ -129,28 +143,35 @@ const scene = new Scenes.WizardScene<BotContext>(
       });
       const tetraEnabled = setting?.enableTetra98 ?? true;
       const manualEnabled = setting?.enableManualPayment ?? true;
-      const paymentButtons = [
-        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
-      ];
+      if (!tetraEnabled && !manualEnabled) {
+        await ctx.reply('No payment methods available');
+        return ctx.scene.leave();
+      }
+
+      const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')]];
       if (tetraEnabled) {
         paymentButtons.push([
           Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
         ]);
       }
       if (manualEnabled) {
-        paymentButtons.push([
-          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
-        ]);
+        paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual')]);
       }
 
-      await ctx.reply(`💰 مبلغ تمدید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
-        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-      });
+      await ctx.reply(
+        `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}\n🎯 مبلغ نهایی: ${formatTomans(preview.finalAmountTomans)}`,
+        {
+          reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+        },
+      );
       return ctx.wizard.next();
-    })
-    .on('callback_query', async (ctx) => {
-      await ctx.answerCbQuery('🔎 ابتدا سرویس را انتخاب کنید');
-    }),
+    } catch (error) {
+      const message =
+        error instanceof AppError ? error.message : '❌ خطا در بررسی کد تخفیف. دوباره تلاش کنید.';
+      await ctx.reply(message);
+      return;
+    }
+  },
   new Composer<BotContext>()
     .action(/^renew_gateway:(wallet|tetra|manual)$/, async (ctx) => {
       if (!ctx.from) {
@@ -197,6 +218,7 @@ const scene = new Scenes.WizardScene<BotContext>(
           telegramId: ctx.from.id,
           serviceId: state.serviceId,
           gateway,
+          promoCode: state.promoCode,
         });
 
         if (gateway === PaymentGateway.WALLET) {

@@ -12,6 +12,16 @@ import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
 const scene = new Scenes.WizardScene<BotContext>(
   'buy-wizard',
   async (ctx) => {
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableNewPurchases: true },
+    });
+
+    if (setting && !setting.enableNewPurchases) {
+      await ctx.reply('🚫 در حال حاضر خرید جدید غیرفعال است.');
+      return ctx.scene.leave();
+    }
+
     const plans = await prisma.plan.findMany({
       where: { isActive: true },
       orderBy: { priceTomans: 'asc' },
@@ -69,30 +79,83 @@ const scene = new Scenes.WizardScene<BotContext>(
 
     const state = ctx.wizard.state as BuyWizardState;
     state.serviceName = raw;
-    const setting = await prisma.setting.findUnique({
-      where: { id: 1 },
-      select: {
-        enableTetra98: true,
-        enableManualPayment: true,
-      },
-    });
-    const tetraEnabled = setting?.enableTetra98 ?? true;
-    const manualEnabled = setting?.enableManualPayment ?? true;
-
-    const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')]];
-    if (tetraEnabled) {
-      paymentButtons.push([Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'buy_gateway:tetra')]);
-    }
-    if (manualEnabled) {
-      paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual')]);
-    }
-
-    await ctx.reply(`💰 مبلغ این خرید: ${formatTomans(state.planPriceTomans ?? 0)}`, {
-      reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-    });
+    await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
 
     return ctx.wizard.next();
   },
+  new Composer<BotContext>()
+    .on('text', async (ctx) => {
+      const state = ctx.wizard.state as BuyWizardState;
+      const raw = ctx.message.text.trim();
+      state.promoCode = raw === '-' ? undefined : raw;
+
+      if (!ctx.from || !state.planId || !state.serviceName) {
+        await ctx.reply('⚠️ اطلاعات خرید ناقص است.');
+        return ctx.scene.leave();
+      }
+
+      try {
+        const plan = await prisma.plan.findUnique({
+          where: { id: state.planId },
+          select: { priceTomans: true, isActive: true },
+        });
+        if (!plan || !plan.isActive) {
+          await ctx.reply('⚠️ پلن انتخابی نامعتبر است.');
+          return ctx.scene.leave();
+        }
+
+        const preview = await paymentOrchestrator.createPurchasePaymentPreview({
+          telegramId: ctx.from.id,
+          planId: state.planId,
+          serviceName: state.serviceName,
+          promoCode: state.promoCode,
+        });
+
+        state.finalAmountTomans = preview.finalAmountTomans;
+        state.promoCode = preview.appliedPromoCode ?? undefined;
+
+        const setting = await prisma.setting.findUnique({
+          where: { id: 1 },
+          select: {
+            enableTetra98: true,
+            enableManualPayment: true,
+          },
+        });
+        const tetraEnabled = setting?.enableTetra98 ?? true;
+        const manualEnabled = setting?.enableManualPayment ?? true;
+
+        if (!tetraEnabled && !manualEnabled) {
+          await ctx.reply('No payment methods available');
+          return ctx.scene.leave();
+        }
+
+        const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')]];
+        if (tetraEnabled) {
+          paymentButtons.push([
+            Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'buy_gateway:tetra'),
+          ]);
+        }
+        if (manualEnabled) {
+          paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual')]);
+        }
+
+        await ctx.reply(
+          `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}\n🎯 مبلغ نهایی: ${formatTomans(preview.finalAmountTomans)}`,
+          {
+            reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+          },
+        );
+        return ctx.wizard.next();
+      } catch (error) {
+        const message =
+          error instanceof AppError ? error.message : '❌ خطا در بررسی کد تخفیف. دوباره تلاش کنید.';
+        await ctx.reply(message);
+        return;
+      }
+    })
+    .on('message', async (ctx) => {
+      await ctx.reply('✍️ لطفا کد تخفیف را متنی ارسال کنید یا "-" بفرستید.');
+    }),
   new Composer<BotContext>()
     .action(/^buy_gateway:(wallet|tetra|manual)$/, async (ctx) => {
       if (!ctx.from) {
@@ -141,6 +204,7 @@ const scene = new Scenes.WizardScene<BotContext>(
           planId: state.planId,
           serviceName: state.serviceName,
           gateway,
+          promoCode: state.promoCode,
         });
 
         if (gateway === PaymentGateway.WALLET) {

@@ -4,6 +4,7 @@ import {
   PaymentGateway,
   PaymentStatus,
   PaymentType,
+  PromoType,
   Prisma,
   WalletTransactionType,
 } from '@prisma/client';
@@ -23,6 +24,12 @@ interface DiscountResult {
   promoCodeId: string | null;
 }
 
+interface PaymentPreviewResult {
+  originalAmountTomans: number;
+  finalAmountTomans: number;
+  appliedPromoCode: string | null;
+}
+
 async function findOrCreateUserByTelegramId(telegramId: number) {
   return prisma.user.upsert({
     where: { telegramId: BigInt(telegramId) },
@@ -32,6 +39,7 @@ async function findOrCreateUserByTelegramId(telegramId: number) {
 }
 
 async function computeDiscount(input: {
+  userId: string;
   amountTomans: number;
   promoCode?: string;
 }): Promise<DiscountResult> {
@@ -51,29 +59,49 @@ async function computeDiscount(input: {
 
   const normalized = input.promoCode.trim().toUpperCase();
 
-  const promo = await prisma.promoCode.findUnique({
+  const promo = await prisma.promo.findUnique({
     where: { code: normalized },
   });
 
-  if (!promo || !promo.isActive || promo.usesLeft <= 0) {
-    throw new AppError('کد تخفیف معتبر نیست', 'PROMO_INVALID', 400);
+  if (!promo || !promo.isActive) {
+    throw new AppError('کد تخفیف نامعتبر یا منقضی شده است', 'PROMO_INVALID', 400);
   }
 
   if (promo.expiresAt && promo.expiresAt.getTime() < Date.now()) {
-    throw new AppError('کد تخفیف منقضی شده است', 'PROMO_EXPIRED', 400);
+    throw new AppError('کد تخفیف نامعتبر یا منقضی شده است', 'PROMO_EXPIRED', 400);
+  }
+
+  if (promo.currentUses >= promo.maxUses) {
+    throw new AppError('کد تخفیف نامعتبر یا منقضی شده است', 'PROMO_MAX_USES', 400);
+  }
+
+  const usedByThisUser = await prisma.promoUsage.findFirst({
+    where: {
+      promoCodeId: promo.id,
+      userId: input.userId,
+    },
+    select: { id: true },
+  });
+
+  if (usedByThisUser) {
+    throw new AppError('کد تخفیف نامعتبر یا منقضی شده است', 'PROMO_ALREADY_USED', 400);
   }
 
   let final = input.amountTomans;
 
-  if (promo.discountPercent && promo.discountPercent > 0) {
-    final -= Math.floor((input.amountTomans * promo.discountPercent) / 100);
+  if (promo.type === PromoType.PERCENT) {
+    final -= Math.floor((input.amountTomans * promo.value) / 100);
   }
 
-  if (promo.fixedTomans && promo.fixedTomans > 0) {
-    final -= promo.fixedTomans;
+  if (promo.type === PromoType.FIXED) {
+    final -= promo.value;
   }
 
   final = Math.max(0, final);
+
+  if (final < env.MIN_WALLET_CHARGE_TOMANS) {
+    throw new AppError('مبلغ نهایی کمتر از حداقل مجاز است', 'PROMO_FINAL_AMOUNT_TOO_LOW', 400);
+  }
 
   return { finalAmountTomans: final, promoCodeId: promo.id };
 }
@@ -100,17 +128,35 @@ async function markPromoUsage(payment: Payment): Promise<void> {
   }
 
   await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const promo = await tx.promoCode.findUnique({ where: { id: payment.promoCodeId! } });
-    if (!promo || promo.usesLeft <= 0) {
+    const promo = await tx.promo.findUnique({ where: { id: payment.promoCodeId! } });
+    if (!promo || !promo.isActive || promo.currentUses >= promo.maxUses) {
       throw new AppError('استفاده از کد تخفیف ممکن نیست', 'PROMO_USE_FAILED', 400);
     }
 
-    await tx.promoCode.update({
-      where: { id: payment.promoCodeId! },
+    const usedByThisUser = await tx.promoUsage.findFirst({
+      where: {
+        promoCodeId: promo.id,
+        userId: payment.userId,
+      },
+      select: { id: true },
+    });
+    if (usedByThisUser) {
+      throw new AppError('استفاده از کد تخفیف ممکن نیست', 'PROMO_ALREADY_USED', 400);
+    }
+
+    const updated = await tx.promo.updateMany({
+      where: {
+        id: payment.promoCodeId!,
+        isActive: true,
+        currentUses: { lt: promo.maxUses },
+      },
       data: {
-        usesLeft: { decrement: 1 },
+        currentUses: { increment: 1 },
       },
     });
+    if (updated.count === 0) {
+      throw new AppError('استفاده از کد تخفیف ممکن نیست', 'PROMO_USE_FAILED', 400);
+    }
 
     await tx.promoUsage.create({
       data: {
@@ -316,6 +362,76 @@ async function completeRenewal(payment: Payment): Promise<void> {
 }
 
 export class PaymentOrchestrator {
+  async createPurchasePaymentPreview(input: {
+    telegramId: number;
+    planId: string;
+    serviceName: string;
+    promoCode?: string;
+  }): Promise<PaymentPreviewResult> {
+    const user = await findOrCreateUserByTelegramId(input.telegramId);
+    const plan = await prisma.plan.findUnique({ where: { id: input.planId } });
+
+    if (!plan || !plan.isActive) {
+      throw new AppError('پلن انتخابی نامعتبر است', 'PLAN_NOT_AVAILABLE', 400);
+    }
+
+    const serviceName = ensureServiceName(input.serviceName);
+    const duplicate = await prisma.service.findFirst({
+      where: {
+        userId: user.id,
+        name: serviceName,
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
+    }
+
+    const discount = await computeDiscount({
+      userId: user.id,
+      amountTomans: plan.priceTomans,
+      promoCode: input.promoCode,
+    });
+
+    return {
+      originalAmountTomans: plan.priceTomans,
+      finalAmountTomans: discount.finalAmountTomans,
+      appliedPromoCode: input.promoCode?.trim() ? input.promoCode.trim().toUpperCase() : null,
+    };
+  }
+
+  async createRenewPaymentPreview(input: {
+    telegramId: number;
+    serviceId: string;
+    promoCode?: string;
+  }): Promise<PaymentPreviewResult> {
+    const user = await findOrCreateUserByTelegramId(input.telegramId);
+    const service = await prisma.service.findFirst({
+      where: {
+        id: input.serviceId,
+        userId: user.id,
+      },
+      include: { plan: true },
+    });
+
+    if (!service || !service.plan) {
+      throw new AppError('سرویس برای تمدید پیدا نشد', 'SERVICE_NOT_FOUND', 404);
+    }
+
+    const discount = await computeDiscount({
+      userId: user.id,
+      amountTomans: service.plan.priceTomans,
+      promoCode: input.promoCode,
+    });
+
+    return {
+      originalAmountTomans: service.plan.priceTomans,
+      finalAmountTomans: discount.finalAmountTomans,
+      appliedPromoCode: input.promoCode?.trim() ? input.promoCode.trim().toUpperCase() : null,
+    };
+  }
+
   async createWalletChargePayment(input: {
     telegramId: number;
     amountTomans: number;
@@ -358,6 +474,14 @@ export class PaymentOrchestrator {
     gateway: PaymentGateway;
     promoCode?: string;
   }) {
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableNewPurchases: true },
+    });
+    if (setting && !setting.enableNewPurchases) {
+      throw new AppError('در حال حاضر خرید جدید غیرفعال است.', 'NEW_PURCHASES_DISABLED', 403);
+    }
+
     const user = await findOrCreateUserByTelegramId(input.telegramId);
     const plan = await prisma.plan.findUnique({ where: { id: input.planId } });
 
@@ -380,6 +504,7 @@ export class PaymentOrchestrator {
     }
 
     const discount = await computeDiscount({
+      userId: user.id,
       amountTomans: plan.priceTomans,
       promoCode: input.promoCode,
     });
@@ -436,6 +561,14 @@ export class PaymentOrchestrator {
     gateway: PaymentGateway;
     promoCode?: string;
   }) {
+    const setting = await prisma.setting.findUnique({
+      where: { id: 1 },
+      select: { enableRenewals: true },
+    });
+    if (setting && !setting.enableRenewals) {
+      throw new AppError('در حال حاضر تمدید غیرفعال است.', 'RENEWALS_DISABLED', 403);
+    }
+
     const user = await findOrCreateUserByTelegramId(input.telegramId);
 
     const service = await prisma.service.findFirst({
@@ -451,6 +584,7 @@ export class PaymentOrchestrator {
     }
 
     const discount = await computeDiscount({
+      userId: user.id,
       amountTomans: service.plan.priceTomans,
       promoCode: input.promoCode,
     });

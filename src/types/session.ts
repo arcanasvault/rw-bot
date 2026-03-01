@@ -47,3 +47,11 @@ export interface AdminAddPlanWizardState {
 export interface AdminEditPlanWizardState extends AdminAddPlanWizardState {
   planId?: string;
 }
+
+export interface AdminAddPromoWizardState {
+  code?: string;
+  type?: 'PERCENT' | 'FIXED';
+  value?: number;
+  maxUses?: number;
+  expiresAt?: Date | null;
+}

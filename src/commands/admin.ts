@@ -3,6 +3,7 @@ import {
   PaymentGateway,
   PaymentStatus,
   PaymentType,
+  PromoType,
   WalletTransactionType,
 } from '@prisma/client';
 import { Markup, Telegraf } from 'telegraf';
@@ -78,7 +79,7 @@ function parseListLimit(input: string | undefined, fallback = 20): number {
 async function sendStats(ctx: BotContext): Promise<void> {
   const now = new Date();
 
-  const [usersCount, servicesCount, activeSubsCount, pendingManualCount, totalSalesAgg] =
+  const [usersCount, servicesCount, activeSubsCount, pendingManualCount, totalSalesAgg, setting] =
     await Promise.all([
       prisma.user.count(),
       prisma.service.count(),
@@ -98,6 +99,13 @@ async function sendStats(ctx: BotContext): Promise<void> {
           type: { in: [PaymentType.PURCHASE, PaymentType.RENEWAL] },
         },
       }),
+      prisma.setting.findUnique({
+        where: { id: 1 },
+        select: {
+          enableNewPurchases: true,
+          enableRenewals: true,
+        },
+      }),
     ]);
 
   const totalSales = totalSalesAgg._sum.amountTomans ?? 0;
@@ -109,6 +117,8 @@ async function sendStats(ctx: BotContext): Promise<void> {
       `🟢 اشتراک فعال: ${activeSubsCount}`,
       `💰 فروش کل: ${formatTomans(totalSales)}`,
       `🧾 رسید در انتظار بررسی: ${pendingManualCount}`,
+      `🛒 خرید جدید: ${setting?.enableNewPurchases ?? true ? 'فعال' : 'غیرفعال'}`,
+      `🔄 تمدید: ${setting?.enableRenewals ?? true ? 'فعال' : 'غیرفعال'}`,
     ].join('\n'),
   );
 }
@@ -151,9 +161,14 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         '/resetalltests',
         '/togglemanual',
         '/toggletetra',
+        '/togglesales',
+        '/togglerenew',
         '/setnotify <days> <gb>',
         '/setaffiliate <fixed|percent> <value>',
-        '/promoadd code|percent|fixed|uses',
+        '/addpromo',
+        '/listpromos',
+        '/togglepromo <code>',
+        '/deletepromo <code>',
       ].join('\n'),
     );
   });
@@ -719,6 +734,46 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.reply(updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.');
   });
 
+  bot.command('togglesales', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
+
+    const updated = await prisma.setting.update({
+      where: { id: 1 },
+      data: { enableNewPurchases: !setting.enableNewPurchases },
+    });
+
+    await ctx.reply(
+      updated.enableNewPurchases ? '✅ خرید جدید فعال شد.' : '🚫 در حال حاضر خرید جدید غیرفعال است.',
+    );
+  });
+
+  bot.command('togglerenew', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
+
+    const updated = await prisma.setting.update({
+      where: { id: 1 },
+      data: { enableRenewals: !setting.enableRenewals },
+    });
+
+    await ctx.reply(updated.enableRenewals ? '✅ تمدید فعال شد.' : '🚫 در حال حاضر تمدید غیرفعال است.');
+  });
+
   bot.command('setnotify', async (ctx) => {
     if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
       return;
@@ -785,47 +840,81 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.reply('✅ تنظیمات همکاری فروش بروزرسانی شد.');
   });
 
-  bot.command('promoadd', async (ctx) => {
+  bot.command('addpromo', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    await ctx.scene.enter('admin-add-promo-wizard');
+  });
+
+  bot.command('listpromos', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const promos = await prisma.promo.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    if (!promos.length) {
+      await ctx.reply('📭 کد تخفیفی ثبت نشده است.');
+      return;
+    }
+
+    await ctx.reply(
+      promos
+        .map((promo) => {
+          const kind = promo.type === PromoType.PERCENT ? `درصدی ${promo.value}%` : `ثابت ${formatTomans(promo.value)}`;
+          const expireText = promo.expiresAt ? promo.expiresAt.toISOString().slice(0, 10) : 'بدون انقضا';
+          return `${promo.code} | ${kind} | استفاده: ${promo.currentUses}/${promo.maxUses} | فعال: ${promo.isActive ? 'بله' : 'خیر'} | انقضا: ${expireText}`;
+        })
+        .join('\n'),
+    );
+  });
+
+  bot.command('togglepromo', async (ctx) => {
     if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
       return;
     }
 
-    const payload = getTextAfterCommand(ctx.message.text);
-    const [codeRaw, percentRaw, fixedRaw, usesRaw] = payload.split('|').map((x) => x?.trim());
+    const code = (getArgs(ctx.message.text)[0] ?? '').trim().toUpperCase();
+    if (!code) {
+      await ctx.reply('🧾 فرمت درست: /togglepromo <code>');
+      return;
+    }
 
-    const code = (codeRaw ?? '').toUpperCase();
-    const percent = percentRaw ? Number(percentRaw) : 0;
-    const fixed = fixedRaw ? Number(fixedRaw) : 0;
-    const uses = asPositiveInt(usesRaw);
+    const promo = await prisma.promo.findUnique({ where: { code } });
+    if (!promo) {
+      await ctx.reply('⚠️ کد تخفیف پیدا نشد.');
+      return;
+    }
 
-    if (
-      !code ||
-      (!percent && !fixed) ||
-      !uses ||
-      !Number.isFinite(percent) ||
-      !Number.isFinite(fixed) ||
-      percent < 0 ||
-      fixed < 0 ||
-      percent > 100
-    ) {
-      await ctx.reply('🧾 فرمت درست: /promoadd code|percent|fixed|uses');
+    const updated = await prisma.promo.update({
+      where: { code },
+      data: { isActive: !promo.isActive },
+    });
+
+    await ctx.reply(updated.isActive ? '✅ کد تخفیف فعال شد.' : '🚫 کد تخفیف غیرفعال شد.');
+  });
+
+  bot.command('deletepromo', async (ctx) => {
+    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+      return;
+    }
+
+    const code = (getArgs(ctx.message.text)[0] ?? '').trim().toUpperCase();
+    if (!code) {
+      await ctx.reply('🧾 فرمت درست: /deletepromo <code>');
       return;
     }
 
     try {
-      await prisma.promoCode.create({
-        data: {
-          code,
-          discountPercent: percent || null,
-          fixedTomans: fixed || null,
-          usesLeft: uses,
-          isActive: true,
-        },
-      });
-
-      await ctx.reply('✅ کد تخفیف ثبت شد.');
+      await prisma.promo.delete({ where: { code } });
+      await ctx.reply('✅ کد تخفیف حذف شد.');
     } catch {
-      await ctx.reply('❌ ثبت کد تخفیف ناموفق بود. ممکن است کد تکراری باشد.');
+      await ctx.reply('⚠️ کد تخفیف پیدا نشد یا قابل حذف نیست.');
     }
   });
 }
