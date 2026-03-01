@@ -3,7 +3,7 @@ import { Markup, type Telegram } from 'telegraf';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { remnawaveService } from './remnawave';
-import { bytesToGb, daysLeft } from '../utils/format';
+import { bytesToGbString, daysLeft } from '../utils/format';
 import { generateQrPngBuffer } from './qr-generator';
 
 function parseServiceName(payload: unknown): string | null {
@@ -128,7 +128,7 @@ export async function sendServiceAccessByServiceId(
       telegramId,
     });
 
-    const serviceTrafficInGb = Math.floor(bytesToGb(service.trafficLimitBytes));
+    const serviceTrafficInGb = Math.floor(bytesToGbString(service.trafficLimitBytes));
     const serviceDays = service.plan?.durationDays ?? Math.max(0, daysLeft(service.expireAt));
 
     const serviceDetailsCaption = [
