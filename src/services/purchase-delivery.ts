@@ -1,5 +1,5 @@
 import { PaymentType } from '@prisma/client';
-import type { Telegram } from 'telegraf';
+import { Markup, type Telegram } from 'telegraf';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { remnawaveService } from './remnawave';
@@ -65,6 +65,33 @@ export async function sendPurchaseAccessByPayment(
     return;
   }
 
+  await sendServiceAccessByServiceId(telegram, Number(payment.user.telegramId), service.id, {
+    successPrefix: '🎉 سرویس شما با موفقیت خریداری شد.',
+  });
+}
+
+export async function sendServiceAccessByServiceId(
+  telegram: Telegram,
+  telegramId: number,
+  serviceId: string,
+  options?: { successPrefix?: string },
+): Promise<void> {
+  const service = await prisma.service.findFirst({
+    where: {
+      id: serviceId,
+      user: { telegramId: BigInt(telegramId) },
+    },
+    include: { plan: true },
+  });
+
+  if (!service) {
+    await telegram.sendMessage(
+      telegramId,
+      '⚠️ سرویس پیدا نشد. برای دریافت کانفیگ از «سرویس‌های من» استفاده کنید.',
+    );
+    return;
+  }
+
   let subscriptionUrl = service.subscriptionUrl ?? '';
   try {
     const remoteSub = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
@@ -78,18 +105,18 @@ export async function sendPurchaseAccessByPayment(
     }
   } catch (error) {
     logger.warn(
-      `purchase delivery remote sub fetch failed service=${service.id} error=${String(error)}`,
+      `service delivery remote sub fetch failed service=${service.id} error=${String(error)}`,
     );
   }
 
   await telegram.sendMessage(
-    Number(payment.user.telegramId),
-    `🎉 سرویس شما با موفقیت خریداری شد.\n🔮 نام سرویس: ${service.name}`,
+    telegramId,
+    `${options?.successPrefix ?? '✅ سرویس شما با موفقیت فعال شد.'}\n🔮 نام سرویس: ${service.name}`,
   );
 
   if (!subscriptionUrl) {
     await telegram.sendMessage(
-      Number(payment.user.telegramId),
+      telegramId,
       '⚠️ لینک اشتراک فعلا در دسترس نیست. از بخش «سرویس‌های من» دوباره بررسی کنید.',
     );
     return;
@@ -98,12 +125,11 @@ export async function sendPurchaseAccessByPayment(
   try {
     const qrBuffer = await generateQrPngBuffer({
       data: subscriptionUrl,
-      telegramId: Number(payment.user.telegramId),
+      telegramId,
     });
 
     const serviceTrafficInGb = Math.floor(bytesToGb(service.trafficLimitBytes));
-    const serviceDays =
-      service.plan?.durationDays ?? Math.max(0, daysLeft(service.expireAt));
+    const serviceDays = service.plan?.durationDays ?? Math.max(0, daysLeft(service.expireAt));
 
     const serviceDetailsCaption = [
       '📱 کد QR اشتراک شما',
@@ -114,13 +140,19 @@ export async function sendPurchaseAccessByPayment(
     ].join('\n');
 
     await telegram.sendPhoto(
-      Number(payment.user.telegramId),
+      telegramId,
       { source: qrBuffer },
       {
         caption: serviceDetailsCaption,
       },
     );
+
+    await telegram.sendMessage(telegramId, '🆘 برای دریافت لینک اضطراری، روی دکمه زیر بزنید:', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🆘 لینک اضطراری', `emergency_links:${service.id}`)],
+      ]).reply_markup,
+    });
   } catch (error) {
-    logger.error(`Failed to generate QR for user ${payment.user.telegramId.toString()}: ${String(error)}`);
+    logger.error(`Failed to generate QR for user ${telegramId}: ${String(error)}`);
   }
 }

@@ -810,7 +810,7 @@ export class PaymentOrchestrator {
 
   async createTestSubscription(
     telegramId: number,
-  ): Promise<{ serviceName: string; subscriptionUrl: string }> {
+  ): Promise<{ serviceId: string; serviceName: string; subscriptionUrl: string }> {
     const user = await findOrCreateUserByTelegramId(telegramId);
     const setting = await prisma.setting.findUnique({ where: { id: 1 } });
 
@@ -853,7 +853,7 @@ export class PaymentOrchestrator {
         .getSubscriptionByUuid(created.uuid)
         .catch(() => null);
 
-      await prisma.service.create({
+      const createdService = await prisma.service.create({
         data: {
           userId: user.id,
           planId: null,
@@ -871,6 +871,7 @@ export class PaymentOrchestrator {
       });
 
       return {
+        serviceId: createdService.id,
         serviceName,
         subscriptionUrl: created.subscriptionUrl ?? subscription?.subscriptionUrl ?? '',
       };

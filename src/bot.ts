@@ -18,6 +18,7 @@ import type { BotContext } from './types/context';
 import type { BotSession } from './types/session';
 import { fa } from './utils/farsi';
 import { paymentOrchestrator } from './services/payment-orchestrator';
+import { sendServiceAccessByServiceId } from './services/purchase-delivery';
 
 const SCENE_EXIT_TEXTS = new Set<string>([
   fa.menu.buy,
@@ -125,9 +126,9 @@ export function createBot(): Telegraf<BotContext> {
 
     try {
       const result = await paymentOrchestrator.createTestSubscription(ctx.from.id);
-      await ctx.reply(
-        `🎁 سرویس تست با نام ${result.serviceName} فعال شد.\n🔗 لینک اشتراک:\n${result.subscriptionUrl}`,
-      );
+      await sendServiceAccessByServiceId(ctx.telegram, ctx.from.id, result.serviceId, {
+        successPrefix: '🎁 سرویس تست شما با موفقیت فعال شد.',
+      });
     } catch (error) {
       if (error instanceof AppError && error.code === 'TEST_DISABLED') {
         await ctx.reply('🚫 در حال حاضر سرویس تست ارائه نمی‌شود');

@@ -174,6 +174,65 @@ async function getOwnedService(
   });
 }
 
+async function getOwnedServiceForEmergency(
+  telegramId: number,
+  serviceId: string,
+): Promise<{
+  id: string;
+  name: string;
+  remnaUserUuid: string;
+} | null> {
+  const user = await prisma.user.findUnique({
+    where: { telegramId: BigInt(telegramId) },
+    select: { id: true },
+  });
+  if (!user) {
+    return null;
+  }
+
+  return prisma.service.findFirst({
+    where: {
+      id: serviceId,
+      userId: user.id,
+    },
+    select: {
+      id: true,
+      name: true,
+      remnaUserUuid: true,
+    },
+  });
+}
+
+async function sendEmergencyLinksByServiceId(
+  ctx: BotContext,
+  telegramId: number,
+  serviceId: string,
+): Promise<void> {
+  const service = await getOwnedServiceForEmergency(telegramId, serviceId);
+  if (!service) {
+    await ctx.reply('⚠️ سرویس نامعتبر است.');
+    return;
+  }
+
+  try {
+    const remote = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
+    const parsed = extractSubscriptionData(remote);
+
+    if (!parsed.emergencyLinks.length) {
+      await ctx.reply('⚠️ لینک‌های اضطراری در دسترس نیست.');
+      return;
+    }
+
+    await ctx.reply(`🆘 لینک‌های اضطراری ${service.name}:`);
+    for (const link of parsed.emergencyLinks) {
+      await ctx.reply(link);
+    }
+  } catch (error) {
+    logger.error(`emergency-links fetch failed service=${service.id} error=${String(error)}`);
+    await ctx.reply('⚠️ لینک‌های اضطراری در دسترس نیست.');
+  }
+}
+
 async function getOwnedServiceWithPlan(telegramId: number, serviceId: string) {
   const user = await prisma.user.findUnique({
     where: { telegramId: BigInt(telegramId) },
@@ -422,31 +481,17 @@ export function registerStartHandlers(bot: Telegraf<BotContext>): void {
     if (!ctx.from) {
       return;
     }
+    await ctx.answerCbQuery();
+    await sendEmergencyLinksByServiceId(ctx, ctx.from.id, ctx.match[1]);
+  });
 
-    const service = await getOwnedService(ctx.from.id, ctx.match[1]);
-    if (!service) {
-      await ctx.answerCbQuery('⚠️ سرویس نامعتبر است.');
+  bot.action(/^emergency_links:(.+)$/, async (ctx) => {
+    if (!ctx.from) {
       return;
     }
 
     await ctx.answerCbQuery();
-    try {
-      const remote = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
-      const parsed = extractSubscriptionData(remote);
-
-      if (!parsed.emergencyLinks.length) {
-        await ctx.reply('⚠️ لینک اضطراری برای این سرویس یافت نشد.');
-        return;
-      }
-
-      await ctx.reply(`🆘 لینک‌های اضطراری ${service.name}:`);
-      for (const link of parsed.emergencyLinks) {
-        await ctx.reply(link);
-      }
-    } catch (error) {
-      logger.error(`emergency-links fetch failed service=${service.id} error=${String(error)}`);
-      await ctx.reply('❌ دریافت لینک اضطراری ناموفق بود.');
-    }
+    await sendEmergencyLinksByServiceId(ctx, ctx.from.id, ctx.match[1]);
   });
 
   bot.action(/^svc:qr:(.+)$/, async (ctx) => {
