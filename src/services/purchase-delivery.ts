@@ -128,7 +128,7 @@ export async function sendServiceAccessByServiceId(
       telegramId,
     });
 
-    const serviceTrafficInGb = Math.floor(bytesToGbString(service.trafficLimitBytes));
+    const serviceTrafficInGb = bytesToGbString(service.trafficLimitBytes);
     const serviceDays = service.plan?.durationDays ?? Math.max(0, daysLeft(service.expireAt));
 
     const serviceDetailsCaption = [

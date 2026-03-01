@@ -5,9 +5,10 @@ export function bytesToGb(bytes: bigint | number): number {
   return Math.max(0, raw / GIGABYTE);
 }
 
-export function bytesToGbString(bytes: bigint | number): number {
+export function bytesToGbString(bytes: bigint | number): string {
   const raw = typeof bytes === 'bigint' ? Number(bytes) : bytes;
-  return Math.max(0, raw / GIGABYTE);
+  const gb = raw / GIGABYTE;
+  return `${gb.toFixed(2)}GB`;
 }
 
 export function daysLeft(expireAt: Date): number {
