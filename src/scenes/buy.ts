@@ -33,10 +33,7 @@ const scene = new Scenes.WizardScene<BotContext>(
     }
 
     const buttons = plans.map((plan) =>
-      Markup.button.callback(
-        `${plan.displayName}`,
-        `buy_plan:${plan.id}`,
-      ),
+      Markup.button.callback(`${plan.displayName}`, `buy_plan:${plan.id}`),
     );
 
     await ctx.reply('🛒 یک پلن را انتخاب کنید:', {
@@ -129,14 +126,18 @@ const scene = new Scenes.WizardScene<BotContext>(
           return ctx.scene.leave();
         }
 
-        const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')]];
+        const paymentButtons = [
+          [Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')],
+        ];
         if (tetraEnabled) {
           paymentButtons.push([
             Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'buy_gateway:tetra'),
           ]);
         }
         if (manualEnabled) {
-          paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual')]);
+          paymentButtons.push([
+            Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual'),
+          ]);
         }
 
         await ctx.reply(
@@ -230,7 +231,9 @@ const scene = new Scenes.WizardScene<BotContext>(
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError
+            ? error.message
+            : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();

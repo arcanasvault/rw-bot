@@ -16,9 +16,7 @@ function ensureBuffer(data: Buffer | Blob | null): Buffer {
 }
 
 function normalizeLogoPath(rawPath: string): string {
-  const expanded = rawPath
-    .replace(/\$\{PWD\}/g, process.cwd())
-    .replace(/^\$PWD/, process.cwd());
+  const expanded = rawPath.replace(/\$\{PWD\}/g, process.cwd()).replace(/^\$PWD/, process.cwd());
 
   if (path.isAbsolute(expanded)) {
     return expanded;

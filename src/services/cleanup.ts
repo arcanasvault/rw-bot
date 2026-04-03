@@ -76,4 +76,3 @@ export function startCleanupCrons(): void {
     { timezone: 'Asia/Tehran' },
   );
 }
-

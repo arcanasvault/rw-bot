@@ -148,14 +148,18 @@ const scene = new Scenes.WizardScene<BotContext>(
         return ctx.scene.leave();
       }
 
-      const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')]];
+      const paymentButtons = [
+        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
+      ];
       if (tetraEnabled) {
         paymentButtons.push([
           Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
         ]);
       }
       if (manualEnabled) {
-        paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual')]);
+        paymentButtons.push([
+          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
+        ]);
       }
 
       await ctx.reply(
@@ -244,7 +248,9 @@ const scene = new Scenes.WizardScene<BotContext>(
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError
+            ? error.message
+            : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();

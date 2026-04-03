@@ -108,7 +108,9 @@ const scene = new Scenes.WizardScene<BotContext>(
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError
+            ? error.message
+            : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();

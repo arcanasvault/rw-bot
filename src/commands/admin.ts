@@ -117,8 +117,8 @@ async function sendStats(ctx: BotContext): Promise<void> {
       `🟢 اشتراک فعال: ${activeSubsCount}`,
       `💰 فروش کل: ${formatTomans(totalSales)}`,
       `🧾 رسید در انتظار بررسی: ${pendingManualCount}`,
-      `🛒 خرید جدید: ${setting?.enableNewPurchases ?? true ? 'فعال' : 'غیرفعال'}`,
-      `🔄 تمدید: ${setting?.enableRenewals ?? true ? 'فعال' : 'غیرفعال'}`,
+      `🛒 خرید جدید: ${(setting?.enableNewPurchases ?? true) ? 'فعال' : 'غیرفعال'}`,
+      `🔄 تمدید: ${(setting?.enableRenewals ?? true) ? 'فعال' : 'غیرفعال'}`,
     ].join('\n'),
   );
 }
@@ -731,7 +731,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { enableTetra98: !setting.enableTetra98 },
     });
 
-    await ctx.reply(updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.');
+    await ctx.reply(
+      updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.',
+    );
   });
 
   bot.command('togglesales', async (ctx) => {
@@ -751,7 +753,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     await ctx.reply(
-      updated.enableNewPurchases ? '✅ خرید جدید فعال شد.' : '🚫 در حال حاضر خرید جدید غیرفعال است.',
+      updated.enableNewPurchases
+        ? '✅ خرید جدید فعال شد.'
+        : '🚫 در حال حاضر خرید جدید غیرفعال است.',
     );
   });
 
@@ -771,7 +775,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { enableRenewals: !setting.enableRenewals },
     });
 
-    await ctx.reply(updated.enableRenewals ? '✅ تمدید فعال شد.' : '🚫 در حال حاضر تمدید غیرفعال است.');
+    await ctx.reply(
+      updated.enableRenewals ? '✅ تمدید فعال شد.' : '🚫 در حال حاضر تمدید غیرفعال است.',
+    );
   });
 
   bot.command('setnotify', async (ctx) => {
@@ -866,8 +872,13 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.reply(
       promos
         .map((promo) => {
-          const kind = promo.type === PromoType.PERCENT ? `درصدی ${promo.value}%` : `ثابت ${formatTomans(promo.value)}`;
-          const expireText = promo.expiresAt ? promo.expiresAt.toISOString().slice(0, 10) : 'بدون انقضا';
+          const kind =
+            promo.type === PromoType.PERCENT
+              ? `درصدی ${promo.value}%`
+              : `ثابت ${formatTomans(promo.value)}`;
+          const expireText = promo.expiresAt
+            ? promo.expiresAt.toISOString().slice(0, 10)
+            : 'بدون انقضا';
           return `${promo.code} | ${kind} | استفاده: ${promo.currentUses}/${promo.maxUses} | فعال: ${promo.isActive ? 'بله' : 'خیر'} | انقضا: ${expireText}`;
         })
         .join('\n'),
