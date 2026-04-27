@@ -226,6 +226,14 @@ function calculateBytes(trafficGb: number): number {
   return Math.max(0, Math.floor(trafficGb * 1024 * 1024 * 1024));
 }
 
+function randomizeManualPaymentAmount(baseAmountTomans: number): number {
+  const threshold = env.MANUAL_PAYMENT_THRESHOLD_PERCENT;
+  const lower = Math.max(1, Math.ceil(baseAmountTomans * (1 - threshold / 100)));
+  const upper = Math.max(lower, Math.floor(baseAmountTomans * (1 + threshold / 100)));
+
+  return lower + Math.floor(Math.random() * (upper - lower + 1));
+}
+
 function ensureServiceName(name: string): string {
   const trimmed = name.trim();
 
@@ -254,6 +262,70 @@ function buildUniqueRemnaUsername(telegramId: bigint, serviceName: string): stri
   const slug = sanitizeServiceName(serviceName);
   const suffix = Math.random().toString(36).slice(2, 6);
   return `tg_${telegramId.toString()}-${slug}-${suffix}`;
+}
+
+async function assertUserCanCreateNewService(input: {
+  userId: string;
+  maxActivePlans: null | number;
+}): Promise<void> {
+  if (!input.maxActivePlans) {
+    return;
+  }
+
+  const services = await prisma.service.findMany({
+    where: {
+      userId: input.userId,
+      isTest: false,
+    },
+    select: {
+      remnaUserUuid: true,
+      isActive: true,
+      expireAt: true,
+    },
+    orderBy: [{ isActive: 'desc' }, { expireAt: 'desc' }],
+  });
+
+  if (services.length < input.maxActivePlans) {
+    return;
+  }
+
+  let activeCount = 0;
+  const now = Date.now();
+
+  for (let index = 0; index < services.length; index += 1) {
+    const service = services[index];
+    const likelyActive = service.isActive && service.expireAt.getTime() > now;
+
+    try {
+      const subscription = await remnawaveService.getSubscriptionByUuid(service.remnaUserUuid);
+      const status = subscription.user?.userStatus;
+
+      if (status === 'ACTIVE') {
+        activeCount += 1;
+      }
+    } catch (error) {
+      logger.warn(
+        `active-plan-check failed for remnaUserUuid=${service.remnaUserUuid} error=${String(error)}`,
+      );
+
+      if (likelyActive) {
+        activeCount += 1;
+      }
+    }
+
+    if (activeCount >= input.maxActivePlans) {
+      throw new AppError(
+        'شما به حداکثر تعداد سرویس فعال رسیده‌اید.',
+        'MAX_ACTIVE_PLANS_REACHED',
+        403,
+      );
+    }
+
+    const remaining = services.length - (index + 1);
+    if (activeCount + remaining < input.maxActivePlans) {
+      return;
+    }
+  }
 }
 
 async function completePurchase(payment: Payment): Promise<void> {
@@ -388,6 +460,11 @@ export class PaymentOrchestrator {
       throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
     }
 
+    await assertUserCanCreateNewService({
+      userId: user.id,
+      maxActivePlans: user.maxActivePlans,
+    });
+
     const discount = await computeDiscount({
       userId: user.id,
       amountTomans: plan.priceTomans,
@@ -503,6 +580,11 @@ export class PaymentOrchestrator {
       throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
     }
 
+    await assertUserCanCreateNewService({
+      userId: user.id,
+      maxActivePlans: user.maxActivePlans,
+    });
+
     const discount = await computeDiscount({
       userId: user.id,
       amountTomans: plan.priceTomans,
@@ -516,6 +598,11 @@ export class PaymentOrchestrator {
       throw new AppError('موجودی کیف پول کافی نیست', 'INSUFFICIENT_WALLET', 400);
     }
 
+    const paymentAmountTomans =
+      input.gateway === PaymentGateway.MANUAL
+        ? randomizeManualPaymentAmount(discount.finalAmountTomans)
+        : discount.finalAmountTomans;
+
     const payment = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -526,8 +613,8 @@ export class PaymentOrchestrator {
           input.gateway === PaymentGateway.MANUAL
             ? PaymentStatus.WAITING_REVIEW
             : PaymentStatus.PENDING,
-        amountTomans: discount.finalAmountTomans,
-        amountRials: toRials(discount.finalAmountTomans),
+        amountTomans: paymentAmountTomans,
+        amountRials: toRials(paymentAmountTomans),
         hashId: `purchase-${Date.now()}-${input.telegramId}`,
         promoCodeId: discount.promoCodeId,
         description: `خرید پلن ${plan.displayName}`,
@@ -539,7 +626,7 @@ export class PaymentOrchestrator {
       try {
         await walletService.debit({
           userId: user.id,
-          amountTomans: discount.finalAmountTomans,
+          amountTomans: paymentAmountTomans,
           type: WalletTransactionType.PURCHASE,
           description: `خرید پلن ${plan.displayName}`,
           paymentId: payment.id,
@@ -596,6 +683,11 @@ export class PaymentOrchestrator {
       throw new AppError('موجودی کیف پول کافی نیست', 'INSUFFICIENT_WALLET', 400);
     }
 
+    const paymentAmountTomans =
+      input.gateway === PaymentGateway.MANUAL
+        ? randomizeManualPaymentAmount(discount.finalAmountTomans)
+        : discount.finalAmountTomans;
+
     const payment = await prisma.payment.create({
       data: {
         userId: user.id,
@@ -607,8 +699,8 @@ export class PaymentOrchestrator {
           input.gateway === PaymentGateway.MANUAL
             ? PaymentStatus.WAITING_REVIEW
             : PaymentStatus.PENDING,
-        amountTomans: discount.finalAmountTomans,
-        amountRials: toRials(discount.finalAmountTomans),
+        amountTomans: paymentAmountTomans,
+        amountRials: toRials(paymentAmountTomans),
         hashId: `renew-${Date.now()}-${input.telegramId}`,
         promoCodeId: discount.promoCodeId,
         description: `تمدید سرویس ${service.name}`,
@@ -619,7 +711,7 @@ export class PaymentOrchestrator {
       try {
         await walletService.debit({
           userId: user.id,
-          amountTomans: discount.finalAmountTomans,
+          amountTomans: paymentAmountTomans,
           type: WalletTransactionType.PURCHASE,
           description: `تمدید سرویس ${service.name}`,
           paymentId: payment.id,

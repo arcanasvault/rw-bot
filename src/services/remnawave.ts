@@ -1,4 +1,5 @@
 import axios, { AxiosError, Method } from 'axios';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import {
   CreateUserCommand,
   DeleteUserCommand,
@@ -15,6 +16,33 @@ import { logger } from '../lib/logger';
 
 const normalizedBaseUrl = env.REMNAWAVE_URL.replace(/\/+$/, '').replace(/\/api$/i, '');
 
+function buildRemnawaveSocksProxyUrl(): null | string {
+  const directUrl = env.REMTNAWAVE_SOCKS5_URL ?? env.REMNAWAVE_SOCKS5_URL;
+  if (directUrl && directUrl.trim().length > 0) {
+    return directUrl.trim();
+  }
+
+  const host = env.REMTNAWAVE_SOCKS5_HOST ?? env.REMNAWAVE_SOCKS5_HOST;
+  const port = env.REMTNAWAVE_SOCKS5_PORT ?? env.REMNAWAVE_SOCKS5_PORT;
+  if (!host || !port) {
+    return null;
+  }
+
+  const username = env.REMTNAWAVE_SOCKS5_USERNAME ?? env.REMNAWAVE_SOCKS5_USERNAME;
+  const password = env.REMTNAWAVE_SOCKS5_PASSWORD ?? env.REMNAWAVE_SOCKS5_PASSWORD;
+  const authPart =
+    username && password
+      ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
+      : '';
+
+  return `socks5://${authPart}${host}:${port}`;
+}
+
+const remnawaveSocksProxyUrl = buildRemnawaveSocksProxyUrl();
+const remnawaveSocksProxyAgent = remnawaveSocksProxyUrl
+  ? new SocksProxyAgent(remnawaveSocksProxyUrl)
+  : null;
+
 const api = axios.create({
   baseURL: normalizedBaseUrl,
   timeout: 20000,
@@ -22,7 +50,18 @@ const api = axios.create({
     Authorization: `Bearer ${env.REMNAWAVE_TOKEN}`,
     'Content-Type': 'application/json',
   },
+  ...(remnawaveSocksProxyAgent
+    ? {
+        httpAgent: remnawaveSocksProxyAgent,
+        httpsAgent: remnawaveSocksProxyAgent,
+        proxy: false,
+      }
+    : {}),
 });
+
+if (remnawaveSocksProxyUrl) {
+  logger.info('Remnawave API SOCKS5 proxy is enabled');
+}
 
 const RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
 const MAX_RETRIES = 3;

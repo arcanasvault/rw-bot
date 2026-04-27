@@ -10,6 +10,7 @@
 - سرویس تست یک‌بار در طول عمر هر Telegram ID
 - کیف پول + شارژ با Tetra98
 - پرداخت کارت‌به‌کارت + ثبت رسید عکس + تایید/رد ادمین
+- مبلغ تصادفی پرداخت دستی با آستانه قابل تنظیم (ENV)
 - خروج خودکار از سناریوها (Wizard Opt-Out) با هر دکمه/دستور جدید
 - منوی «سرویس‌های من» با دکمه‌های لینک هوشمند، لینک اضطراری، QR و بازگشت
 - اعلان روزانه کاهش حجم/انقضا در ساعت 16:00 تهران
@@ -135,8 +136,11 @@ ${APP_URL}/callback/tetra98
 - `DATABASE_URL=postgresql://...`
 - `REMNAWAVE_URL=https://your-panel.com/api` (یا بدون `/api`)
 - `REMNAWAVE_TOKEN=...`
+- `REMTNAWAVE_SOCKS5_URL=socks5://user:pass@ip:port` (اختیاری)
+- یا `REMTNAWAVE_SOCKS5_HOST/PORT/USERNAME/PASSWORD` (اختیاری)
 - `TETRA98_API_KEY=...`
 - `MANUAL_CARD_NUMBER=...`
+- `MANUAL_PAYMENT_THRESHOLD_PERCENT=10`
 - `DEFAULT_INTERNAL_SQUAD_ID=1`
 - `MIN_WALLET_CHARGE_TOMANS=10000`
 - `MAX_WALLET_CHARGE_TOMANS=10000000`
@@ -183,7 +187,13 @@ ${APP_URL}/callback/tetra98
 - `/ban <tg_id>`
 - `/unban <tg_id>`
 - `/wallet <tg_id> <amount>`
+- `/setactiveplans <telegram_id> <limit|null>`
 - `/manuals`
+- `/salestoday`
+- `/sales24h`
+- `/salesweek`
+- `/salesmonth`
+- `/topusers [N]`
 - `/broadcast <message>`
 - `/plans`
 - `/addplan`
