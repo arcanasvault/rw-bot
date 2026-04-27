@@ -16,9 +16,9 @@ export async function showMainMenu(
   ctx: BotContext,
   text = `🚀 سلام 👋 به ربات آرکانا خوش آمدید.
 
-یادتون نره توی کانال @arcanair عوض بشید.
+یادتون نره توی کانال @arcanair عوض بشید. 🔮
 
-🎁 تست رایگان بگیرید و در صورت رضایت، در عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
+🎁 عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
 ): Promise<void> {
   await ctx.reply(text, {
     reply_markup: mainMenuKeyboard().reply_markup,

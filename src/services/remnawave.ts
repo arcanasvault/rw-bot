@@ -17,19 +17,19 @@ import { logger } from '../lib/logger';
 const normalizedBaseUrl = env.REMNAWAVE_URL.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 function buildRemnawaveSocksProxyUrl(): null | string {
-  const directUrl = env.REMTNAWAVE_SOCKS5_URL ?? env.REMNAWAVE_SOCKS5_URL;
+  const directUrl = env.REMNAWAVE_SOCKS5_URL ?? env.REMNAWAVE_SOCKS5_URL;
   if (directUrl && directUrl.trim().length > 0) {
     return directUrl.trim();
   }
 
-  const host = env.REMTNAWAVE_SOCKS5_HOST ?? env.REMNAWAVE_SOCKS5_HOST;
-  const port = env.REMTNAWAVE_SOCKS5_PORT ?? env.REMNAWAVE_SOCKS5_PORT;
+  const host = env.REMNAWAVE_SOCKS5_HOST ?? env.REMNAWAVE_SOCKS5_HOST;
+  const port = env.REMNAWAVE_SOCKS5_PORT ?? env.REMNAWAVE_SOCKS5_PORT;
   if (!host || !port) {
     return null;
   }
 
-  const username = env.REMTNAWAVE_SOCKS5_USERNAME ?? env.REMNAWAVE_SOCKS5_USERNAME;
-  const password = env.REMTNAWAVE_SOCKS5_PASSWORD ?? env.REMNAWAVE_SOCKS5_PASSWORD;
+  const username = env.REMNAWAVE_SOCKS5_USERNAME ?? env.REMNAWAVE_SOCKS5_USERNAME;
+  const password = env.REMNAWAVE_SOCKS5_PASSWORD ?? env.REMNAWAVE_SOCKS5_PASSWORD;
   const authPart =
     username && password
       ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
