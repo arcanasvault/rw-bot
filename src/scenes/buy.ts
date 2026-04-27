@@ -8,6 +8,7 @@ import type { BuyWizardState } from '../types/session';
 import { formatTomans } from '../utils/currency';
 import { paymentOrchestrator } from '../services/payment-orchestrator';
 import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
+import { escapeMdV2 } from '../utils/format';
 
 const scene = new Scenes.WizardScene<BotContext>(
   'buy-wizard',
@@ -231,15 +232,18 @@ const scene = new Scenes.WizardScene<BotContext>(
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.replyWithMarkdownV2(
-          `
-          💳 لطفا دقیقا مبلغ \`${formatTomans(payment.amountTomans)}\` را به کارت
-\`${cardNumber}\`
-به نام *کریمی*
-واریز و عکس رسید را ارسال کنید.
-
-مبلغ واریزی را *عینا مطابق با مبلغ اعلام شده* واریز کنید و از رند کردن خودداری نمایید. از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و ... خودداری نمایید.
-در غیر اینصورت تراکنش تایید نمیگردد.
-          `,
+          [
+            '💳 لطفا دقیقا مبلغ',
+            `\`${escapeMdV2(formatTomans(payment.amountTomans))}\``,
+            'را به کارت',
+            `\`${escapeMdV2(cardNumber)}\``,
+            'به نام *کریمی*',
+            'واریز و عکس رسید را ارسال کنید.',
+            '',
+            'مبلغ واریزی را *عینا مطابق با مبلغ اعلام شده* واریز کنید و از رند کردن خودداری نمایید.',
+            'از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و \\.\\.\\. خودداری نمایید.',
+            'در غیر اینصورت تراکنش تایید نمیگردد\\.',
+          ].join('\n'),
         );
         return ctx.wizard.next();
       } catch (error) {
