@@ -10,6 +10,7 @@
 - سرویس تست یک‌بار در طول عمر هر Telegram ID
 - کیف پول + شارژ با Tetra98
 - پرداخت کارت‌به‌کارت + ثبت رسید عکس + تایید/رد ادمین
+- مبلغ تصادفی پرداخت دستی با آستانه قابل تنظیم (ENV)
 - خروج خودکار از سناریوها (Wizard Opt-Out) با هر دکمه/دستور جدید
 - منوی «سرویس‌های من» با دکمه‌های لینک هوشمند، لینک اضطراری، QR و بازگشت
 - اعلان روزانه کاهش حجم/انقضا در ساعت 16:00 تهران
@@ -53,7 +54,7 @@ chmod +x setup.sh
 8. Uninstall (remove containers + volumes)
 9. Reset Database Completely
 10. Setup NGINX + Certbot (optional)
-0. Exit
+11. Exit
 
 ### Install / Setup چه می‌کند؟
 
@@ -84,91 +85,41 @@ ${APP_URL}/callback/tetra98
 
 ## نصب روی همان سرور پنل RemnaWave
 
-در این سناریو پنل RemnaWave از قبل روی همان Ubuntu VPS فعال است (پنل روی `127.0.0.1:3000` و NGINX هاست هم در حال سرویس‌دهی روی `80/443` است). چون `80/443` قبلا اشغال هستند، سرویس NGINX داخلی ربات نمی‌تواند روی همین پورت‌ها bind شود و باید fallback استفاده شود.
+اگر بات را روی همان VPS پنل RemnaWave اجرا می‌کنید، دیگر نیازی به دامنه عمومی، HTTPS یا webhook تلگرام ندارید. بات اکنون با long polling و `getUpdates` کار می‌کند.
 
-1. پیش‌نیاز و آماده‌سازی پروژه:
-   - پروژه را clone کنید و وارد پوشه شوید:
+1. پروژه را clone کنید و فایل env اولیه را بسازید:
+
    ```bash
    git clone https://github.com/arcanasvault/rw-bot
    cd remnawave-vpn-bot
-   ```
-   - فایل env اولیه را بسازید:
-   ```bash
    cp .env.example .env
    ```
 
-2. دیتابیس جدا برای ربات:
-   - برای ربات یک PostgreSQL database/user مستقل بسازید.
-   - دیتابیس پنل را با ربات مشترک نکنید.
+2. برای ربات یک PostgreSQL database/user مستقل بسازید و دیتابیس پنل را با ربات مشترک نکنید.
 
-3. اتصال ربات به RemnaWave داخلی:
-   - در `.env`:
-     - `REMNAWAVE_URL=http://127.0.0.1:3000`
-     - یا `REMNAWAVE_URL=http://localhost:3000`
+3. در `.env` آدرس پنل را روی localhost بگذارید:
+   - `REMNAWAVE_URL=http://localhost:3000`
+   - یا `REMNAWAVE_URL=http://127.0.0.1:3000`
 
-4. پورت اپلیکیشن ربات:
-   - چون پنل روی `3000` است، پورت ربات را `4000` بگذارید (یا هر پورت آزاد دیگر).
-   - `setup.sh` در صورت تداخل، مقدار مناسب پیشنهاد می‌دهد.
+4. اسکریپت setup را اجرا کنید:
 
-5. انتخاب روش NGINX برای webhook:
-   - روش A (Bundled NGINX ربات):
-     - `ENABLE_NGINX=true`
-     - اگر `80/443` اشغال باشد، اسکریپت خودکار fallback می‌گذارد:
-       - `NGINX_HTTP_PORT=8080`
-       - `NGINX_HTTPS_PORT=8443`
-     - در این حالت `APP_URL` به شکل `https://bot.domain.com:8443` تنظیم می‌شود.
-   - روش B (NGINX فعلی پنل):
-     - `ENABLE_NGINX=false`
-     - یک server block جدید در nginx.conf فعلی پنل برای ساب‌دامین ربات اضافه کنید و به `127.0.0.1:4000` پروکسی کنید.
-     - این روش برای نگه داشتن HTTPS روی `443` استاندارد مناسب‌تر است.
-
-6. اگر از NGINX موجود پنل استفاده می‌کنید، نمونه server block:
-   ```nginx
-   server {
-       listen 80;
-       server_name bot.domain.com;
-
-       location / {
-           proxy_pass http://127.0.0.1:4000;
-           proxy_http_version 1.1;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
-   سپس SSL بگیرید:
-   ```bash
-   certbot --nginx -d bot.domain.com
-   ```
-
-7. اجرای نصب با اسکریپت:
    ```bash
    chmod +x setup.sh
    ./setup.sh
    ```
-   - گزینه `1) Install / Setup` را بزنید.
-   - هنگام Prompt ها:
-     - `REMNAWAVE_URL` را `http://127.0.0.1:3000` بگذارید.
-     - `WEBHOOK_PATH` را `/telegram/webhook` بگذارید.
-     - اگر `ENABLE_NGINX=true` و پورت `443` اشغال است، fallback `8443` را قبول کنید.
 
-8. بررسی بعد از نصب:
-   - webhook را بررسی کنید:
-   ```bash
-   curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo"
-   ```
+   - گزینه `1) Install / Setup` را بزنید.
+   - در Prompt ها مقدار `REMNAWAVE_URL` را روی `http://localhost:3000` یا `http://127.0.0.1:3000` بگذارید.
+
+5. در این سناریو:
+   - نیازی به `APP_URL` ندارید.
+   - نیازی به `WEBHOOK_PATH` ندارید.
+   - نیازی به NGINX، Certbot، دامنه یا SSL ندارید.
+   - بات بعد از بالا آمدن کانتینر `app` به صورت 24/7 با long polling کار می‌کند.
+
+6. برای بررسی وضعیت:
    - در تلگرام `/start` تست کنید.
    - لاگ‌ها را با گزینه `5` در `setup.sh` ببینید.
-
-9. عیب‌یابی سریع:
-   - اگر NGINX داخلی بالا نیامد، تداخل `80/443` را بررسی کنید.
-   - اگر از NGINX پنل استفاده می‌کنید، بعد از تغییر کانفیگ:
-   ```bash
-   nginx -t && nginx -s reload
-   ```
-   - در معماری فعلی معمولا rule جدید UFW نیاز نیست.
 
 ## متغیرهای محیطی `.env`
 
@@ -185,8 +136,11 @@ ${APP_URL}/callback/tetra98
 - `DATABASE_URL=postgresql://...`
 - `REMNAWAVE_URL=https://your-panel.com/api` (یا بدون `/api`)
 - `REMNAWAVE_TOKEN=...`
+- `REMTNAWAVE_SOCKS5_URL=socks5://user:pass@ip:port` (اختیاری)
+- یا `REMTNAWAVE_SOCKS5_HOST/PORT/USERNAME/PASSWORD` (اختیاری)
 - `TETRA98_API_KEY=...`
 - `MANUAL_CARD_NUMBER=...`
+- `MANUAL_PAYMENT_THRESHOLD_PERCENT=10`
 - `DEFAULT_INTERNAL_SQUAD_ID=1`
 - `MIN_WALLET_CHARGE_TOMANS=10000`
 - `MAX_WALLET_CHARGE_TOMANS=10000000`
@@ -233,7 +187,13 @@ ${APP_URL}/callback/tetra98
 - `/ban <tg_id>`
 - `/unban <tg_id>`
 - `/wallet <tg_id> <amount>`
+- `/setactiveplans <telegram_id> <limit|null>`
 - `/manuals`
+- `/salestoday`
+- `/sales24h`
+- `/salesweek`
+- `/salesmonth`
+- `/topusers [N]`
 - `/broadcast <message>`
 - `/plans`
 - `/addplan`

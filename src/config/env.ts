@@ -4,13 +4,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
-  APP_URL: z.string().url(),
-  WEBHOOK_PATH: z
-    .string()
-    .regex(/^\/[A-Za-z0-9/_-]*$/)
-    .default('/telegram/webhook')
-    .transform((value) => (value.length > 1 ? value.replace(/\/+$/, '') : value)),
-  WEBHOOK_SET_RETRIES: z.coerce.number().int().min(1).max(10).default(3),
+  APP_URL: z.string().url().optional(),
   BOT_TOKEN: z.string().min(10),
   BOT_USERNAME: z.string().min(3),
   ADMIN_TG_IDS: z.string().min(1),
@@ -18,10 +12,21 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(10),
   REMNAWAVE_URL: z.string().url(),
   REMNAWAVE_TOKEN: z.string().min(10),
+  REMNAWAVE_SOCKS5_URL: z.string().optional(),
+  REMNAWAVE_SOCKS5_HOST: z.string().optional(),
+  REMNAWAVE_SOCKS5_PORT: z.coerce.number().int().positive().optional(),
+  REMNAWAVE_SOCKS5_USERNAME: z.string().optional(),
+  REMNAWAVE_SOCKS5_PASSWORD: z.string().optional(),
+  REMTNAWAVE_SOCKS5_URL: z.string().optional(),
+  REMTNAWAVE_SOCKS5_HOST: z.string().optional(),
+  REMTNAWAVE_SOCKS5_PORT: z.coerce.number().int().positive().optional(),
+  REMTNAWAVE_SOCKS5_USERNAME: z.string().optional(),
+  REMTNAWAVE_SOCKS5_PASSWORD: z.string().optional(),
   DEFAULT_INTERNAL_SQUAD_ID: z.string().min(1).default('1'),
   LOGO_URL: z.string().url().optional(),
   TETRA98_API_KEY: z.string().min(10),
   MANUAL_CARD_NUMBER: z.string().min(8),
+  MANUAL_PAYMENT_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(10),
   MIN_WALLET_CHARGE_TOMANS: z.coerce.number().int().positive().default(10000),
   MAX_WALLET_CHARGE_TOMANS: z.coerce.number().int().positive().default(10000000),
 });

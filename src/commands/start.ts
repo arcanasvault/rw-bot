@@ -299,7 +299,9 @@ async function renderServicesList(ctx: BotContext, editCurrentMessage = false): 
 
   const keyboard = Markup.inlineKeyboard(
     user.services.map((service) => {
-      return [Markup.button.callback(service.name, `${SERVICE_CALLBACK_PREFIX}:item:${service.id}`)];
+      return [
+        Markup.button.callback(service.name, `${SERVICE_CALLBACK_PREFIX}:item:${service.id}`),
+      ];
     }),
   );
 

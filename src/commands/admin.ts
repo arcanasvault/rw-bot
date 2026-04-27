@@ -3,6 +3,7 @@ import {
   PaymentGateway,
   PaymentStatus,
   PaymentType,
+  Prisma,
   PromoType,
   WalletTransactionType,
 } from '@prisma/client';
@@ -76,6 +77,151 @@ function parseListLimit(input: string | undefined, fallback = 20): number {
   return Math.min(value, 100);
 }
 
+const TEHRAN_TIME_ZONE = 'Asia/Tehran';
+const SALES_PAYMENT_TYPES = [PaymentType.PURCHASE, PaymentType.RENEWAL] as const;
+
+function getTimeZoneDateParts(date: Date, timeZone: string): Record<string, number> {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  return formatter.formatToParts(date).reduce<Record<string, number>>((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = Number(part.value);
+    }
+    return acc;
+  }, {});
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = getTimeZoneDateParts(date, timeZone);
+  const utcFromTzParts = Date.UTC(
+    parts.year,
+    (parts.month ?? 1) - 1,
+    parts.day ?? 1,
+    parts.hour ?? 0,
+    parts.minute ?? 0,
+    parts.second ?? 0,
+  );
+
+  return utcFromTzParts - date.getTime();
+}
+
+function getStartOfTodayInTimeZone(timeZone: string): Date {
+  const now = new Date();
+  const parts = getTimeZoneDateParts(now, timeZone);
+  const utcGuess = Date.UTC(parts.year, (parts.month ?? 1) - 1, parts.day ?? 1, 0, 0, 0);
+  const offset = getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+  return new Date(utcGuess - offset);
+}
+
+function formatGb(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function formatUserLabel(telegramId: bigint, telegramUsername: null | string): string {
+  if (telegramUsername) {
+    return `${telegramId.toString()} (@${telegramUsername})`;
+  }
+  return telegramId.toString();
+}
+
+async function buildSalesReport(input: { from: Date; to: Date }) {
+  const where: Prisma.PaymentWhereInput = {
+    status: PaymentStatus.SUCCESS,
+    type: { in: [...SALES_PAYMENT_TYPES] },
+    createdAt: {
+      gte: input.from,
+      lte: input.to,
+    },
+  };
+
+  const [aggregate, groupedByPlan] = await Promise.all([
+    prisma.payment.aggregate({
+      where,
+      _count: { _all: true },
+      _sum: { amountTomans: true },
+    }),
+    prisma.payment.groupBy({
+      by: ['planId'],
+      where,
+      _count: { _all: true },
+      _sum: { amountTomans: true },
+    }),
+  ]);
+
+  const planIds = groupedByPlan
+    .map((item) => item.planId)
+    .filter((planId): planId is string => Boolean(planId));
+
+  const plans = planIds.length
+    ? await prisma.plan.findMany({
+        where: { id: { in: planIds } },
+        select: { id: true, displayName: true, trafficGb: true },
+      })
+    : [];
+
+  const planMap = new Map(plans.map((plan) => [plan.id, plan]));
+
+  const planBreakdown = groupedByPlan.map((item) => {
+    const plan = item.planId ? planMap.get(item.planId) : null;
+    const purchases = item._count._all;
+    const totalGb = plan ? plan.trafficGb * purchases : 0;
+
+    return {
+      planName: plan?.displayName ?? 'پلن حذف شده/نامشخص',
+      purchases,
+      revenueTomans: item._sum.amountTomans ?? 0,
+      totalGb,
+    };
+  });
+
+  planBreakdown.sort((a, b) => b.revenueTomans - a.revenueTomans);
+
+  return {
+    totalRevenueTomans: aggregate._sum.amountTomans ?? 0,
+    purchases: aggregate._count._all,
+    totalGb: planBreakdown.reduce((sum, item) => sum + item.totalGb, 0),
+    planBreakdown,
+  };
+}
+
+async function sendSalesReport(ctx: BotContext, input: { from: Date; to: Date; title: string }) {
+  const report = await buildSalesReport({ from: input.from, to: input.to });
+
+  const lines = [
+    `${input.title}`,
+    `💵 درآمد کل: ${formatTomans(report.totalRevenueTomans)}`,
+    `🌐 مجموع حجم فروخته‌شده: ${formatGb(report.totalGb)} GB`,
+    `🧾 تعداد خرید/تمدید موفق: ${report.purchases}`,
+    '',
+    '📦 تفکیک بر اساس پلن:',
+  ];
+
+  if (report.planBreakdown.length === 0) {
+    lines.push('— هیچ داده‌ای در این بازه ثبت نشده است.');
+  } else {
+    report.planBreakdown.forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${item.planName} | ${item.purchases} خرید | ${formatGb(item.totalGb)} GB | ${formatTomans(item.revenueTomans)}`,
+      );
+    });
+  }
+
+  await ctx.reply(lines.join('\n'));
+}
+
 async function sendStats(ctx: BotContext): Promise<void> {
   const now = new Date();
 
@@ -117,8 +263,8 @@ async function sendStats(ctx: BotContext): Promise<void> {
       `🟢 اشتراک فعال: ${activeSubsCount}`,
       `💰 فروش کل: ${formatTomans(totalSales)}`,
       `🧾 رسید در انتظار بررسی: ${pendingManualCount}`,
-      `🛒 خرید جدید: ${setting?.enableNewPurchases ?? true ? 'فعال' : 'غیرفعال'}`,
-      `🔄 تمدید: ${setting?.enableRenewals ?? true ? 'فعال' : 'غیرفعال'}`,
+      `🛒 خرید جدید: ${(setting?.enableNewPurchases ?? true) ? 'فعال' : 'غیرفعال'}`,
+      `🔄 تمدید: ${(setting?.enableRenewals ?? true) ? 'فعال' : 'غیرفعال'}`,
     ].join('\n'),
   );
 }
@@ -148,7 +294,13 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         '/ban <tg_id>',
         '/unban <tg_id>',
         '/wallet <tg_id> <amount>',
+        '/setactiveplans <telegram_id> <limit|null>',
         '/manuals',
+        '/salestoday',
+        '/sales24h',
+        '/salesweek',
+        '/salesmonth',
+        '/topusers [N]',
         '/broadcast <message>',
         '/plans',
         '/addplan',
@@ -209,7 +361,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
 
     const lines = users.map(
       (u) =>
-        `${u.telegramId.toString()} | بن: ${u.isBanned ? 'بله' : 'خیر'} | کیف پول: ${formatTomans(u.walletBalanceTomans)}`,
+        `${u.telegramId.toString()} | بن: ${u.isBanned ? 'بله' : 'خیر'} | کیف پول: ${formatTomans(u.walletBalanceTomans)} | حداکثر سرویس فعال: ${u.maxActivePlans ?? '∞'}`,
     );
 
     await ctx.reply(lines.join('\n'));
@@ -347,6 +499,180 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     await ctx.reply('✅ کیف پول کاربر بروزرسانی شد.');
+  });
+
+  bot.command('setactiveplans', async (ctx) => {
+    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+      return;
+    }
+
+    const [telegramIdRaw, limitRaw] = getArgs(ctx.message.text);
+    const telegramId = Number(telegramIdRaw);
+
+    if (!Number.isInteger(telegramId) || telegramId <= 0 || !limitRaw) {
+      await ctx.reply('🧾 فرمت درست: /setactiveplans <telegram_id> <limit|null>');
+      return;
+    }
+
+    const normalizedLimit = limitRaw.trim().toLowerCase();
+    const shouldClearLimit = ['null', 'none', '-', 'off', 'remove'].includes(normalizedLimit);
+
+    let maxActivePlans: null | number = null;
+    if (!shouldClearLimit) {
+      const parsedLimit = Number(limitRaw);
+      if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+        await ctx.reply('⚠️ limit باید عدد صحیح مثبت باشد یا null.');
+        return;
+      }
+      maxActivePlans = parsedLimit;
+    }
+
+    await prisma.user.upsert({
+      where: { telegramId: BigInt(telegramId) },
+      update: { maxActivePlans },
+      create: {
+        telegramId: BigInt(telegramId),
+        maxActivePlans,
+      },
+    });
+
+    await ctx.reply(
+      maxActivePlans
+        ? `✅ محدودیت سرویس فعال کاربر ${telegramId} روی ${maxActivePlans} تنظیم شد.`
+        : `✅ محدودیت سرویس فعال کاربر ${telegramId} حذف شد.`,
+    );
+  });
+
+  bot.command('salestoday', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const from = getStartOfTodayInTimeZone(TEHRAN_TIME_ZONE);
+    const to = new Date();
+    await sendSalesReport(ctx, { from, to, title: '📅 گزارش فروش امروز' });
+  });
+
+  bot.command('sales24h', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const to = new Date();
+    const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+    await sendSalesReport(ctx, { from, to, title: '⏱ گزارش فروش 24 ساعت اخیر' });
+  });
+
+  bot.command('salesweek', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const to = new Date();
+    const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+    await sendSalesReport(ctx, { from, to, title: '🗓 گزارش فروش 7 روز اخیر' });
+  });
+
+  bot.command('salesmonth', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const to = new Date();
+    const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+    await sendSalesReport(ctx, { from, to, title: '📆 گزارش فروش 30 روز اخیر' });
+  });
+
+  bot.command('topusers', async (ctx) => {
+    if (!isAdmin(ctx) || !ctx.message || !('text' in ctx.message)) {
+      return;
+    }
+
+    const requested = Number(getArgs(ctx.message.text)[0]);
+    const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, 100) : 10;
+
+    const grouped = await prisma.payment.groupBy({
+      by: ['userId', 'planId'],
+      where: {
+        status: PaymentStatus.SUCCESS,
+        type: { in: [...SALES_PAYMENT_TYPES] },
+      },
+      _count: { _all: true },
+      _sum: { amountTomans: true },
+    });
+
+    if (!grouped.length) {
+      await ctx.reply('📭 هنوز خرید موفقی ثبت نشده است.');
+      return;
+    }
+
+    const userIds = [...new Set(grouped.map((item) => item.userId))];
+    const planIds = [
+      ...new Set(grouped.map((item) => item.planId).filter((planId): planId is string => !!planId)),
+    ];
+
+    const [users, plans] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, telegramId: true, telegramUsername: true },
+      }),
+      planIds.length
+        ? prisma.plan.findMany({
+            where: { id: { in: planIds } },
+            select: { id: true, trafficGb: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const userMap = new Map(users.map((user) => [user.id, user]));
+    const planMap = new Map(plans.map((plan) => [plan.id, plan]));
+
+    const totals = new Map<
+      string,
+      { purchases: number; totalGb: number; totalSpentTomans: number; userLabel: string }
+    >();
+
+    grouped.forEach((item) => {
+      const user = userMap.get(item.userId);
+      if (!user) {
+        return;
+      }
+
+      const current = totals.get(item.userId) ?? {
+        purchases: 0,
+        totalGb: 0,
+        totalSpentTomans: 0,
+        userLabel: formatUserLabel(user.telegramId, user.telegramUsername),
+      };
+
+      const purchases = item._count._all;
+      const spent = item._sum.amountTomans ?? 0;
+      const planTraffic = item.planId ? (planMap.get(item.planId)?.trafficGb ?? 0) : 0;
+
+      current.purchases += purchases;
+      current.totalSpentTomans += spent;
+      current.totalGb += planTraffic * purchases;
+
+      totals.set(item.userId, current);
+    });
+
+    const ranking = [...totals.values()]
+      .sort((a, b) => b.totalGb - a.totalGb || b.totalSpentTomans - a.totalSpentTomans)
+      .slice(0, limit);
+
+    if (!ranking.length) {
+      await ctx.reply('📭 هنوز خرید موفقی ثبت نشده است.');
+      return;
+    }
+
+    const lines = [`🏆 ${limit} کاربر برتر بر اساس مجموع حجم خرید`];
+    ranking.forEach((row, index) => {
+      lines.push(
+        `${index + 1}. 👤 ${row.userLabel} | 🌐 ${formatGb(row.totalGb)} GB | 💵 ${formatTomans(row.totalSpentTomans)} | 🧾 ${row.purchases} خرید`,
+      );
+    });
+
+    await ctx.reply(lines.join('\n'));
   });
 
   bot.command('manuals', async (ctx) => {
@@ -731,7 +1057,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { enableTetra98: !setting.enableTetra98 },
     });
 
-    await ctx.reply(updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.');
+    await ctx.reply(
+      updated.enableTetra98 ? '✅ پرداخت تترا98 فعال شد.' : '🚫 پرداخت تترا98 غیرفعال شد.',
+    );
   });
 
   bot.command('togglesales', async (ctx) => {
@@ -751,7 +1079,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     });
 
     await ctx.reply(
-      updated.enableNewPurchases ? '✅ خرید جدید فعال شد.' : '🚫 در حال حاضر خرید جدید غیرفعال است.',
+      updated.enableNewPurchases
+        ? '✅ خرید جدید فعال شد.'
+        : '🚫 در حال حاضر خرید جدید غیرفعال است.',
     );
   });
 
@@ -771,7 +1101,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
       data: { enableRenewals: !setting.enableRenewals },
     });
 
-    await ctx.reply(updated.enableRenewals ? '✅ تمدید فعال شد.' : '🚫 در حال حاضر تمدید غیرفعال است.');
+    await ctx.reply(
+      updated.enableRenewals ? '✅ تمدید فعال شد.' : '🚫 در حال حاضر تمدید غیرفعال است.',
+    );
   });
 
   bot.command('setnotify', async (ctx) => {
@@ -866,8 +1198,13 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.reply(
       promos
         .map((promo) => {
-          const kind = promo.type === PromoType.PERCENT ? `درصدی ${promo.value}%` : `ثابت ${formatTomans(promo.value)}`;
-          const expireText = promo.expiresAt ? promo.expiresAt.toISOString().slice(0, 10) : 'بدون انقضا';
+          const kind =
+            promo.type === PromoType.PERCENT
+              ? `درصدی ${promo.value}%`
+              : `ثابت ${formatTomans(promo.value)}`;
+          const expireText = promo.expiresAt
+            ? promo.expiresAt.toISOString().slice(0, 10)
+            : 'بدون انقضا';
           return `${promo.code} | ${kind} | استفاده: ${promo.currentUses}/${promo.maxUses} | فعال: ${promo.isActive ? 'بله' : 'خیر'} | انقضا: ${expireText}`;
         })
         .join('\n'),

@@ -148,22 +148,31 @@ const scene = new Scenes.WizardScene<BotContext>(
         return ctx.scene.leave();
       }
 
-      const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')]];
+      const paymentButtons = [
+        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
+      ];
       if (tetraEnabled) {
         paymentButtons.push([
           Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
         ]);
       }
       if (manualEnabled) {
-        paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual')]);
+        paymentButtons.push([
+          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
+        ]);
       }
 
-      await ctx.reply(
-        `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}\n🎯 مبلغ نهایی: ${formatTomans(preview.finalAmountTomans)}`,
-        {
-          reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-        },
-      );
+      const previewLines = [
+        `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}`,
+        `🎯 مبلغ پرداخت آنلاین/کیف پول: ${formatTomans(preview.finalAmountTomans)}`,
+      ];
+      if (manualEnabled) {
+        previewLines.push('💳 مبلغ کارت به کارت پس از انتخاب این روش نمایش داده می‌شود.');
+      }
+
+      await ctx.reply(previewLines.join('\n'), {
+        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+      });
       return ctx.wizard.next();
     } catch (error) {
       const message =
@@ -239,12 +248,22 @@ const scene = new Scenes.WizardScene<BotContext>(
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.reply(
-          `💳 لطفا مبلغ ${formatTomans(payment.amountTomans)} را به کارت ${cardNumber} واریز کنید و عکس رسید را ارسال کنید.`,
+          `
+          💳 لطفا دقیقا مبلغ \`${formatTomans(payment.amountTomans)}\` را به کارت
+\`${cardNumber}\`
+به نام *کریمی*
+واریز و عکس رسید را ارسال کنید.
+
+مبلغ واریزی را *عینا مطابق با مبلغ اعلام شده* واریز کنید و از رند کردن خودداری نمایید. از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و ... خودداری نمایید.
+در غیر اینصورت تراکنش تایید نمیگردد.
+          `,
         );
         return ctx.wizard.next();
       } catch (error) {
         const message =
-          error instanceof AppError ? error.message : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
+          error instanceof AppError
+            ? error.message
+            : '❌ خطا در ایجاد پرداخت. لطفا دوباره تلاش کنید.';
         await ctx.answerCbQuery();
         await ctx.reply(message);
         return ctx.scene.leave();

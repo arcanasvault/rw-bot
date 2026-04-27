@@ -28,7 +28,6 @@
   ],
   "author": "",
   "license": "MIT",
-  "packageManager": "pnpm@10.14.0",
   "dependencies": {
     "@prisma/client": "^6.4.1",
     "@remnawave/backend-contract": "^2.6.1",
@@ -39,6 +38,7 @@
     "node-cron": "^3.0.3",
     "qr-code-styling": "^1.9.2",
     "sharp": "^0.34.4",
+    "socks-proxy-agent": "^8.0.5",
     "telegraf": "^4.16.3",
     "telegraf-ratelimit": "^2.0.0",
     "winston": "^3.17.0",
