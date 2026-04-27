@@ -8,7 +8,6 @@ import type { BuyWizardState } from '../types/session';
 import { formatTomans } from '../utils/currency';
 import { paymentOrchestrator } from '../services/payment-orchestrator';
 import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
-import { escapeMdV2 } from '../utils/format';
 
 const scene = new Scenes.WizardScene<BotContext>(
   'buy-wizard',
@@ -231,19 +230,19 @@ const scene = new Scenes.WizardScene<BotContext>(
         const cardNumber = setting?.manualCardNumber ?? env.MANUAL_CARD_NUMBER;
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
-        await ctx.replyWithMarkdownV2(
-          [
-            '💳 لطفا دقیقا مبلغ',
-            `\`${escapeMdV2(formatTomans(payment.amountTomans))}\``,
-            'را به کارت',
-            `\`${escapeMdV2(cardNumber)}\``,
-            'به نام *کریمی*',
-            'واریز و عکس رسید را ارسال کنید.',
-            '',
-            'مبلغ واریزی را *عینا مطابق با مبلغ اعلام شده* واریز کنید و از رند کردن خودداری نمایید.',
-            'از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و \\.\\.\\. خودداری نمایید.',
-            'در غیر اینصورت تراکنش تایید نمیگردد\\.',
-          ].join('\n'),
+        await ctx.reply(
+          `
+💳 لطفا دقیقا مبلغ <code>${payment.amountRials}</code> معادل ${formatTomans(payment.amountTomans)} را به کارت
+
+<code>${cardNumber}</code>
+به نام <b>کریمی</b>
+
+          مبلغ واریزی را <b>عینا مطابق با مبلغ اعلام شده</b> واریز کنید و از رند کردن خودداری نمایید. از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و ... خودداری نمایید.
+در غیر اینصورت تراکنش تایید نمیگردد.
+          `,
+          {
+            parse_mode: 'HTML',
+          },
         );
         return ctx.wizard.next();
       } catch (error) {

@@ -24,7 +24,3 @@ export function sanitizeServiceName(name: string): string {
     .replace(/[^a-z0-9_-]/g, '')
     .slice(0, 24);
 }
-
-export function escapeMdV2(text: string) {
-  return text.replace(/[_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
-}
