@@ -227,9 +227,14 @@ function calculateBytes(trafficGb: number): number {
 }
 
 function randomizeManualPaymentAmount(baseAmountTomans: number): number {
-  const threshold = env.MANUAL_PAYMENT_THRESHOLD_PERCENT;
-  const lower = Math.max(1, Math.ceil(baseAmountTomans * (1 - threshold / 100)));
-  const upper = Math.max(lower, Math.floor(baseAmountTomans * (1 + threshold / 100)));
+  const lower = Math.max(
+    1,
+    Math.ceil(baseAmountTomans * (1 - env.MANUAL_PAYMENT_LOWER_THRESHOLD_PERCENT / 100)),
+  );
+  const upper = Math.max(
+    lower,
+    Math.floor(baseAmountTomans * (1 + env.MANUAL_PAYMENT_UPPER_THRESHOLD_PERCENT / 100)),
+  );
 
   return lower + Math.floor(Math.random() * (upper - lower + 1));
 }

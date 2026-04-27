@@ -230,7 +230,7 @@ const scene = new Scenes.WizardScene<BotContext>(
         const cardNumber = setting?.manualCardNumber ?? env.MANUAL_CARD_NUMBER;
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
-        await ctx.reply(
+        await ctx.replyWithMarkdownV2(
           `
           💳 لطفا دقیقا مبلغ \`${formatTomans(payment.amountTomans)}\` را به کارت
 \`${cardNumber}\`

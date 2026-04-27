@@ -136,8 +136,8 @@ ${APP_URL}/callback/tetra98
 - `DATABASE_URL=postgresql://...`
 - `REMNAWAVE_URL=https://your-panel.com/api` (یا بدون `/api`)
 - `REMNAWAVE_TOKEN=...`
-- `REMTNAWAVE_SOCKS5_URL=socks5://user:pass@ip:port` (اختیاری)
-- یا `REMTNAWAVE_SOCKS5_HOST/PORT/USERNAME/PASSWORD` (اختیاری)
+- `REMNAWAVE_SOCKS5_URL=socks5://user:pass@ip:port` (اختیاری)
+- یا `REMNAWAVE_SOCKS5_HOST/PORT/USERNAME/PASSWORD` (اختیاری)
 - `TETRA98_API_KEY=...`
 - `MANUAL_CARD_NUMBER=...`
 - `MANUAL_PAYMENT_THRESHOLD_PERCENT=10`

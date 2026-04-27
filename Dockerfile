@@ -21,6 +21,8 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/docker/entrypoint.sh ./docker/entrypoint.sh
 COPY logo.png /app/logo.png
-RUN mkdir -p /app/logs
+RUN mkdir -p /app/logs && \
+    chmod +x /app/docker/entrypoint.sh
 EXPOSE 4000
+ENTRYPOINT ["/bin/sh", "-c"]
 CMD ["/app/docker/entrypoint.sh"]
