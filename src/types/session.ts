@@ -35,6 +35,10 @@ export interface WalletWizardState {
   manualPaymentId?: string;
 }
 
+export interface TestWizardState {
+  serviceName?: string;
+}
+
 export interface AdminAddPlanWizardState {
   name?: string;
   displayName?: string;

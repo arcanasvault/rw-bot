@@ -5,7 +5,6 @@ import { registerAdminCommands } from './commands/admin';
 import { registerBuyCommands } from './commands/buy';
 import { registerRenewCommands } from './commands/renew';
 import { registerStartHandlers } from './commands/start';
-import { AppError } from './errors/app-error';
 import { logger } from './lib/logger';
 import { ensureKnownUser } from './middlewares/auth';
 import { adminAddPlanWizardScene } from './scenes/admin-add-plan';
@@ -13,12 +12,11 @@ import { adminAddPromoWizardScene } from './scenes/admin-add-promo';
 import { adminEditPlanWizardScene } from './scenes/admin-edit-plan';
 import { buyWizardScene } from './scenes/buy';
 import { renewWizardScene } from './scenes/renew';
+import { testWizardScene } from './scenes/test';
 import { walletChargeWizardScene } from './scenes/wallet-charge';
 import type { BotContext } from './types/context';
 import type { BotSession } from './types/session';
 import { fa } from './utils/farsi';
-import { paymentOrchestrator } from './services/payment-orchestrator';
-import { sendServiceAccessByServiceId } from './services/purchase-delivery';
 
 const SCENE_EXIT_TEXTS = new Set<string>([
   fa.menu.buy,
@@ -64,6 +62,7 @@ export function createBot(): Telegraf<BotContext> {
     adminEditPlanWizardScene,
     buyWizardScene,
     renewWizardScene,
+    testWizardScene,
     walletChargeWizardScene,
   ]);
 
@@ -120,24 +119,7 @@ export function createBot(): Telegraf<BotContext> {
   registerAdminCommands(bot);
 
   bot.hears(fa.menu.test, async (ctx) => {
-    if (!ctx.from) {
-      return;
-    }
-
-    try {
-      const result = await paymentOrchestrator.createTestSubscription(ctx.from.id);
-      await sendServiceAccessByServiceId(ctx.telegram, ctx.from.id, result.serviceId, {
-        successPrefix: '🎁 سرویس تست شما با موفقیت فعال شد.',
-      });
-    } catch (error) {
-      if (error instanceof AppError && error.code === 'TEST_DISABLED') {
-        await ctx.reply('🚫 در حال حاضر سرویس تست ارائه نمی‌شود');
-        return;
-      }
-
-      const message = error instanceof AppError ? error.message : '❌ خطا در ایجاد سرویس تست';
-      await ctx.reply(message);
-    }
+    await ctx.scene.enter('test-wizard');
   });
 
   bot.action('wallet_charge', async (ctx) => {

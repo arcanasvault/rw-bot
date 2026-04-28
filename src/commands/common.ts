@@ -18,7 +18,7 @@ export async function showMainMenu(
 
 یادتون نره توی کانال @arcanair عوض بشید. 🔮
 
-🎁 عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
+در عرض 30 ثانیه سرویس خودتون رو بخرید 👇`,
 ): Promise<void> {
   await ctx.reply(text, {
     reply_markup: mainMenuKeyboard().reply_markup,

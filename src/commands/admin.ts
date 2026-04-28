@@ -250,6 +250,7 @@ async function sendStats(ctx: BotContext): Promise<void> {
         select: {
           enableNewPurchases: true,
           enableRenewals: true,
+          enablePromos: true,
         },
       }),
     ]);
@@ -265,6 +266,7 @@ async function sendStats(ctx: BotContext): Promise<void> {
       `🧾 رسید در انتظار بررسی: ${pendingManualCount}`,
       `🛒 خرید جدید: ${(setting?.enableNewPurchases ?? true) ? 'فعال' : 'غیرفعال'}`,
       `🔄 تمدید: ${(setting?.enableRenewals ?? true) ? 'فعال' : 'غیرفعال'}`,
+      `🎟️ کد تخفیف: ${(setting?.enablePromos ?? true) ? 'فعال' : 'غیرفعال'}`,
     ].join('\n'),
   );
 }
@@ -312,6 +314,7 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
         '/resettest <tg_id>',
         '/resetalltests',
         '/togglemanual',
+        '/togglepromocode',
         '/toggletetra',
         '/togglesales',
         '/togglerenew',
@@ -1035,6 +1038,25 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     await ctx.reply(
       updated.enableManualPayment ? '✅ پرداخت دستی فعال شد.' : '🚫 پرداخت دستی غیرفعال شد.',
     );
+  });
+
+  bot.command('togglepromocode', async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return;
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1 },
+    });
+
+    const updated = await prisma.setting.update({
+      where: { id: 1 },
+      data: { enablePromos: !setting.enablePromos },
+    });
+
+    await ctx.reply(updated.enablePromos ? '✅ کد تخفیف فعال شد.' : '🚫 کد تخفیف غیرفعال شد.');
   });
 
   bot.command('toggletetra', async (ctx) => {

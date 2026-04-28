@@ -183,6 +183,20 @@ export class RemnawaveService {
     return response.response;
   }
 
+  async usernameExists(username: string): Promise<boolean> {
+    try {
+      await this.getUserByUsername(username);
+      return true;
+    } catch (error) {
+      const err = error as AxiosError<unknown>;
+      if (err.response?.status === 404) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   async deleteUser(uuid: string): Promise<void> {
     await execCommand<DeleteUserCommand.Response>({
       method: DeleteUserCommand.endpointDetails.REQUEST_METHOD,

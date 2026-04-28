@@ -13,7 +13,6 @@ import { AppError } from '../errors/app-error';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { toRials } from '../utils/currency';
-import { sanitizeServiceName } from '../utils/format';
 import { parseInternalSquadIds } from '../utils/squad';
 import { remnawaveService } from './remnawave';
 import { tetra98Service } from './tetra98';
@@ -320,12 +319,6 @@ function readServiceNameFromPayload(payload: Prisma.JsonValue | null): string {
   return ensureServiceName(maybeServiceName);
 }
 
-function buildUniqueRemnaUsername(telegramId: bigint, serviceName: string): string {
-  const slug = sanitizeServiceName(serviceName);
-  const suffix = Math.random().toString(36).slice(2, 6);
-  return `tg_${telegramId.toString()}-${slug}-${suffix}`;
-}
-
 async function assertUserCanCreateNewService(input: {
   userId: string;
   maxActivePlans: null | number;
@@ -419,7 +412,7 @@ async function preparePurchaseCompletion(payment: Payment): Promise<RemoteComple
 
   const trafficLimitBytes = calculateBytes(plan.trafficGb);
   const expireAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-  const remnaUsername = buildUniqueRemnaUsername(user.telegramId, serviceName);
+  const remnaUsername = serviceName;
 
   const created = await remnawaveService.createUser({
     username: remnaUsername,
@@ -566,6 +559,14 @@ export class PaymentOrchestrator {
       throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
     }
 
+    if (await remnawaveService.usernameExists(serviceName)) {
+      throw new AppError(
+        'این نام کاربری قبلاً گرفته شده است. لطفاً نام دیگری وارد کنید.',
+        'SERVICE_NAME_TAKEN',
+        409,
+      );
+    }
+
     await assertUserCanCreateNewService({
       userId: user.id,
       maxActivePlans: user.maxActivePlans,
@@ -684,6 +685,14 @@ export class PaymentOrchestrator {
 
     if (duplicate) {
       throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
+    }
+
+    if (await remnawaveService.usernameExists(serviceName)) {
+      throw new AppError(
+        'این نام کاربری قبلاً گرفته شده است. لطفاً نام دیگری وارد کنید.',
+        'SERVICE_NAME_TAKEN',
+        409,
+      );
     }
 
     await assertUserCanCreateNewService({
@@ -1032,6 +1041,7 @@ export class PaymentOrchestrator {
 
   async createTestSubscription(
     telegramId: number,
+    requestedServiceName: string,
   ): Promise<{ serviceId: string; serviceName: string; subscriptionUrl: string }> {
     const user = await findOrCreateUserByTelegramId(telegramId);
     const setting = await prisma.setting.findUnique({ where: { id: 1 } });
@@ -1059,12 +1069,32 @@ export class PaymentOrchestrator {
     const durationDays = setting?.testDurationDays ?? 1;
     const expireAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
     const testInternalSquadId = setting?.testInternalSquadId ?? env.DEFAULT_INTERNAL_SQUAD_ID;
-    const serviceName = `test-${Date.now().toString().slice(-4)}`;
-    const remnaUsername = buildUniqueRemnaUsername(user.telegramId, serviceName);
+    const serviceName = ensureServiceName(requestedServiceName);
+    const remnaUsername = serviceName;
     let createdRemoteUser: null | { shortUuid?: string | null; subscriptionUrl?: string | null; uuid: string } =
       null;
 
     try {
+      const duplicate = await prisma.service.findFirst({
+        where: {
+          userId: user.id,
+          name: serviceName,
+        },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        throw new AppError('سرویسی با این نام قبلا ثبت شده است', 'SERVICE_NAME_DUPLICATE', 409);
+      }
+
+      if (await remnawaveService.usernameExists(serviceName)) {
+        throw new AppError(
+          'این نام کاربری قبلاً گرفته شده است. لطفاً نام دیگری وارد کنید.',
+          'SERVICE_NAME_TAKEN',
+          409,
+        );
+      }
+
       createdRemoteUser = await remnawaveService.createUser({
         username: remnaUsername,
         trafficLimitBytes: trafficBytes,

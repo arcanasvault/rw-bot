@@ -8,6 +8,63 @@ import type { BotContext } from '../types/context';
 import type { RenewWizardState } from '../types/session';
 import { formatTomans } from '../utils/currency';
 
+async function promptPaymentOptions(
+  ctx: BotContext,
+  state: RenewWizardState,
+): Promise<'leave' | 'next'> {
+  if (!ctx.from || !state.serviceId) {
+    await ctx.reply('⚠️ اطلاعات تمدید ناقص است.');
+    return 'leave';
+  }
+
+  const preview = await paymentOrchestrator.createRenewPaymentPreview({
+    telegramId: ctx.from.id,
+    serviceId: state.serviceId,
+    promoCode: state.promoCode,
+  });
+
+  state.finalAmountTomans = preview.finalAmountTomans;
+  state.promoCode = preview.appliedPromoCode ?? undefined;
+
+  const setting = await prisma.setting.findUnique({
+    where: { id: 1 },
+    select: {
+      enableTetra98: true,
+      enableManualPayment: true,
+    },
+  });
+  const tetraEnabled = setting?.enableTetra98 ?? true;
+  const manualEnabled = setting?.enableManualPayment ?? true;
+  if (!tetraEnabled && !manualEnabled) {
+    await ctx.reply('No payment methods available');
+    return 'leave';
+  }
+
+  const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')]];
+  if (tetraEnabled) {
+    paymentButtons.push([
+      Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
+    ]);
+  }
+  if (manualEnabled) {
+    paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual')]);
+  }
+
+  const previewLines = [
+    `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}`,
+    `🎯 مبلغ پرداخت آنلاین/کیف پول: ${formatTomans(preview.finalAmountTomans)}`,
+  ];
+  if (manualEnabled) {
+    previewLines.push('💳 مبلغ کارت به کارت پس از انتخاب این روش نمایش داده می‌شود.');
+  }
+
+  await ctx.reply(previewLines.join('\n'), {
+    reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+  });
+
+  return 'next';
+}
+
 const scene = new Scenes.WizardScene<BotContext>(
   'renew-wizard',
   async (ctx) => {
@@ -43,9 +100,30 @@ const scene = new Scenes.WizardScene<BotContext>(
       state.serviceId = preSelected.id;
       state.planId = preSelected.plan.id;
       state.planPriceTomans = preSelected.plan.priceTomans;
-      await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
-      ctx.wizard.selectStep(2);
-      return;
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: { enablePromos: true },
+      });
+      if (setting?.enablePromos ?? true) {
+        await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
+        ctx.wizard.selectStep(2);
+        return;
+      }
+
+      try {
+        const result = await promptPaymentOptions(ctx, state);
+        if (result === 'leave') {
+          return ctx.scene.leave();
+        }
+
+        ctx.wizard.selectStep(3);
+        return;
+      } catch (error) {
+        const message =
+          error instanceof AppError ? error.message : '❌ خطا در بررسی کد تخفیف. دوباره تلاش کنید.';
+        await ctx.reply(message);
+        return ctx.scene.leave();
+      }
     }
 
     const user = await prisma.user.findUnique({
@@ -102,9 +180,31 @@ const scene = new Scenes.WizardScene<BotContext>(
       state.planId = service.plan.id;
       state.planPriceTomans = service.plan.priceTomans;
 
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: { enablePromos: true },
+      });
+
       await ctx.answerCbQuery();
-      await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
-      return ctx.wizard.next();
+      if (setting?.enablePromos ?? true) {
+        await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
+        return ctx.wizard.next();
+      }
+
+      try {
+        const result = await promptPaymentOptions(ctx, state);
+        if (result === 'leave') {
+          return ctx.scene.leave();
+        }
+
+        ctx.wizard.selectStep(3);
+        return;
+      } catch (error) {
+        const message =
+          error instanceof AppError ? error.message : '❌ خطا در بررسی کد تخفیف. دوباره تلاش کنید.';
+        await ctx.reply(message);
+        return ctx.scene.leave();
+      }
     })
     .on('callback_query', async (ctx) => {
       await ctx.answerCbQuery('🔎 ابتدا سرویس را انتخاب کنید');
@@ -125,54 +225,11 @@ const scene = new Scenes.WizardScene<BotContext>(
     state.promoCode = promoCode === '-' ? undefined : promoCode;
 
     try {
-      const preview = await paymentOrchestrator.createRenewPaymentPreview({
-        telegramId: ctx.from.id,
-        serviceId: state.serviceId,
-        promoCode: state.promoCode,
-      });
-
-      state.finalAmountTomans = preview.finalAmountTomans;
-      state.promoCode = preview.appliedPromoCode ?? undefined;
-
-      const setting = await prisma.setting.findUnique({
-        where: { id: 1 },
-        select: {
-          enableTetra98: true,
-          enableManualPayment: true,
-        },
-      });
-      const tetraEnabled = setting?.enableTetra98 ?? true;
-      const manualEnabled = setting?.enableManualPayment ?? true;
-      if (!tetraEnabled && !manualEnabled) {
-        await ctx.reply('No payment methods available');
+      const result = await promptPaymentOptions(ctx, state);
+      if (result === 'leave') {
         return ctx.scene.leave();
       }
 
-      const paymentButtons = [
-        [Markup.button.callback('💳 پرداخت از کیف پول', 'renew_gateway:wallet')],
-      ];
-      if (tetraEnabled) {
-        paymentButtons.push([
-          Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'renew_gateway:tetra'),
-        ]);
-      }
-      if (manualEnabled) {
-        paymentButtons.push([
-          Markup.button.callback('💳 پرداخت کارت به کارت', 'renew_gateway:manual'),
-        ]);
-      }
-
-      const previewLines = [
-        `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}`,
-        `🎯 مبلغ پرداخت آنلاین/کیف پول: ${formatTomans(preview.finalAmountTomans)}`,
-      ];
-      if (manualEnabled) {
-        previewLines.push('💳 مبلغ کارت به کارت پس از انتخاب این روش نمایش داده می‌شود.');
-      }
-
-      await ctx.reply(previewLines.join('\n'), {
-        reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-      });
       return ctx.wizard.next();
     } catch (error) {
       const message =

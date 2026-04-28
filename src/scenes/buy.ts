@@ -3,11 +3,91 @@ import { Composer, Markup, Scenes } from 'telegraf';
 import { env } from '../config/env';
 import { AppError } from '../errors/app-error';
 import { prisma } from '../lib/prisma';
+import { paymentOrchestrator } from '../services/payment-orchestrator';
+import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
+import { remnawaveService } from '../services/remnawave';
 import type { BotContext } from '../types/context';
 import type { BuyWizardState } from '../types/session';
 import { formatTomans } from '../utils/currency';
-import { paymentOrchestrator } from '../services/payment-orchestrator';
-import { sendPurchaseAccessByPayment } from '../services/purchase-delivery';
+
+async function promptPlanSelection(ctx: BotContext): Promise<boolean> {
+  const plans = await prisma.plan.findMany({
+    where: { isActive: true },
+    orderBy: { priceTomans: 'asc' },
+  });
+
+  if (plans.length === 0) {
+    await ctx.reply('📭 در حال حاضر پلنی برای فروش فعال نیست.');
+    return false;
+  }
+
+  const buttons = plans.map((plan) =>
+    Markup.button.callback(`${plan.displayName}`, `buy_plan:${plan.id}`),
+  );
+
+  await ctx.reply('🛒 یک پلن را انتخاب کنید:', {
+    reply_markup: Markup.inlineKeyboard(buttons, { columns: 1 }).reply_markup,
+  });
+
+  return true;
+}
+
+async function promptPaymentOptions(
+  ctx: BotContext,
+  state: BuyWizardState,
+): Promise<'leave' | 'next'> {
+  if (!ctx.from || !state.planId || !state.serviceName) {
+    await ctx.reply('⚠️ اطلاعات خرید ناقص است.');
+    return 'leave';
+  }
+
+  const preview = await paymentOrchestrator.createPurchasePaymentPreview({
+    telegramId: ctx.from.id,
+    planId: state.planId,
+    serviceName: state.serviceName,
+    promoCode: state.promoCode,
+  });
+
+  state.finalAmountTomans = preview.finalAmountTomans;
+  state.promoCode = preview.appliedPromoCode ?? undefined;
+
+  const setting = await prisma.setting.findUnique({
+    where: { id: 1 },
+    select: {
+      enableTetra98: true,
+      enableManualPayment: true,
+    },
+  });
+  const tetraEnabled = setting?.enableTetra98 ?? true;
+  const manualEnabled = setting?.enableManualPayment ?? true;
+
+  if (!tetraEnabled && !manualEnabled) {
+    await ctx.reply('No payment methods available');
+    return 'leave';
+  }
+
+  const paymentButtons = [[Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')]];
+  if (tetraEnabled) {
+    paymentButtons.push([Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'buy_gateway:tetra')]);
+  }
+  if (manualEnabled) {
+    paymentButtons.push([Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual')]);
+  }
+
+  const previewLines = [
+    `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}`,
+    `🎯 مبلغ پرداخت آنلاین/کیف پول: ${formatTomans(preview.finalAmountTomans)}`,
+  ];
+  if (manualEnabled) {
+    previewLines.push('💳 مبلغ کارت به کارت پس از انتخاب این روش نمایش داده می‌شود.');
+  }
+
+  await ctx.reply(previewLines.join('\n'), {
+    reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
+  });
+
+  return 'next';
+}
 
 const scene = new Scenes.WizardScene<BotContext>(
   'buy-wizard',
@@ -22,23 +102,58 @@ const scene = new Scenes.WizardScene<BotContext>(
       return ctx.scene.leave();
     }
 
-    const plans = await prisma.plan.findMany({
-      where: { isActive: true },
-      orderBy: { priceTomans: 'asc' },
-    });
-
-    if (plans.length === 0) {
-      await ctx.reply('📭 در حال حاضر پلنی برای فروش فعال نیست.');
-      return ctx.scene.leave();
+    await ctx.reply('✍️ نام سرویس دلخواه را ارسال کنید (فقط انگلیسی/عدد، بدون فاصله):');
+    return ctx.wizard.next();
+  },
+  async (ctx) => {
+    if (!ctx.message || !('text' in ctx.message) || !ctx.from) {
+      await ctx.reply('✍️ لطفا نام سرویس را متنی ارسال کنید.');
+      return;
     }
 
-    const buttons = plans.map((plan) =>
-      Markup.button.callback(`${plan.displayName}`, `buy_plan:${plan.id}`),
-    );
+    const raw = ctx.message.text.trim();
+    if (!/^[a-zA-Z0-9_-]{3,24}$/.test(raw)) {
+      await ctx.reply('⚠️ نام سرویس نامعتبر است. مثال: myvpn1');
+      return;
+    }
 
-    await ctx.reply('🛒 یک پلن را انتخاب کنید:', {
-      reply_markup: Markup.inlineKeyboard(buttons, { columns: 1 }).reply_markup,
+    try {
+      if (await remnawaveService.usernameExists(raw)) {
+        await ctx.reply('این نام کاربری قبلاً گرفته شده است. لطفاً نام دیگری وارد کنید.');
+        return;
+      }
+    } catch {
+      await ctx.reply('❌ خطا در بررسی نام کاربری. لطفا دوباره تلاش کنید.');
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: BigInt(ctx.from.id) },
+      select: { id: true },
     });
+
+    if (user) {
+      const duplicate = await prisma.service.findFirst({
+        where: {
+          userId: user.id,
+          name: raw,
+        },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        await ctx.reply('سرویسی با این نام قبلا ثبت شده است');
+        return;
+      }
+    }
+
+    const state = ctx.wizard.state as BuyWizardState;
+    state.serviceName = raw;
+
+    const prompted = await promptPlanSelection(ctx);
+    if (!prompted) {
+      return ctx.scene.leave();
+    }
 
     return ctx.wizard.next();
   },
@@ -52,105 +167,57 @@ const scene = new Scenes.WizardScene<BotContext>(
       }
 
       const state = ctx.wizard.state as BuyWizardState;
+      if (!state.serviceName) {
+        await ctx.answerCbQuery();
+        await ctx.reply('⚠️ ابتدا نام سرویس را وارد کنید.');
+        return ctx.scene.leave();
+      }
+
       state.planId = plan.id;
       state.planPriceTomans = plan.priceTomans;
 
+      const setting = await prisma.setting.findUnique({
+        where: { id: 1 },
+        select: { enablePromos: true },
+      });
+
       await ctx.answerCbQuery();
-      await ctx.reply('✍️ نام سرویس دلخواه را ارسال کنید (فقط انگلیسی/عدد، بدون فاصله):');
-      return ctx.wizard.next();
+
+      if (setting?.enablePromos ?? true) {
+        await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
+        return ctx.wizard.next();
+      }
+
+      try {
+        const result = await promptPaymentOptions(ctx, state);
+        if (result === 'leave') {
+          return ctx.scene.leave();
+        }
+
+        ctx.wizard.selectStep(4);
+        return;
+      } catch (error) {
+        const message =
+          error instanceof AppError ? error.message : '❌ خطا در بررسی کد تخفیف. دوباره تلاش کنید.';
+        await ctx.reply(message);
+        return ctx.scene.leave();
+      }
     })
     .on('callback_query', async (ctx) => {
       await ctx.answerCbQuery('🔎 ابتدا یک پلن را انتخاب کنید');
     }),
-  async (ctx) => {
-    if (!ctx.message || !('text' in ctx.message)) {
-      await ctx.reply('✍️ لطفا نام سرویس را متنی ارسال کنید.');
-      return;
-    }
-
-    const raw = ctx.message.text.trim();
-    if (!/^[a-zA-Z0-9_-]{3,24}$/.test(raw)) {
-      await ctx.reply('⚠️ نام سرویس نامعتبر است. مثال: myvpn1');
-      return;
-    }
-
-    const state = ctx.wizard.state as BuyWizardState;
-    state.serviceName = raw;
-    await ctx.reply('🎟️ کد تخفیف (اختیاری):\nاگر ندارید "-" ارسال کنید.');
-
-    return ctx.wizard.next();
-  },
   new Composer<BotContext>()
     .on('text', async (ctx) => {
       const state = ctx.wizard.state as BuyWizardState;
       const raw = ctx.message.text.trim();
       state.promoCode = raw === '-' ? undefined : raw;
 
-      if (!ctx.from || !state.planId || !state.serviceName) {
-        await ctx.reply('⚠️ اطلاعات خرید ناقص است.');
-        return ctx.scene.leave();
-      }
-
       try {
-        const plan = await prisma.plan.findUnique({
-          where: { id: state.planId },
-          select: { priceTomans: true, isActive: true },
-        });
-        if (!plan || !plan.isActive) {
-          await ctx.reply('⚠️ پلن انتخابی نامعتبر است.');
+        const result = await promptPaymentOptions(ctx, state);
+        if (result === 'leave') {
           return ctx.scene.leave();
         }
 
-        const preview = await paymentOrchestrator.createPurchasePaymentPreview({
-          telegramId: ctx.from.id,
-          planId: state.planId,
-          serviceName: state.serviceName,
-          promoCode: state.promoCode,
-        });
-
-        state.finalAmountTomans = preview.finalAmountTomans;
-        state.promoCode = preview.appliedPromoCode ?? undefined;
-
-        const setting = await prisma.setting.findUnique({
-          where: { id: 1 },
-          select: {
-            enableTetra98: true,
-            enableManualPayment: true,
-          },
-        });
-        const tetraEnabled = setting?.enableTetra98 ?? true;
-        const manualEnabled = setting?.enableManualPayment ?? true;
-
-        if (!tetraEnabled && !manualEnabled) {
-          await ctx.reply('No payment methods available');
-          return ctx.scene.leave();
-        }
-
-        const paymentButtons = [
-          [Markup.button.callback('💳 پرداخت از کیف پول', 'buy_gateway:wallet')],
-        ];
-        if (tetraEnabled) {
-          paymentButtons.push([
-            Markup.button.callback('🌐 پرداخت آنلاین تترا98', 'buy_gateway:tetra'),
-          ]);
-        }
-        if (manualEnabled) {
-          paymentButtons.push([
-            Markup.button.callback('💳 پرداخت کارت به کارت', 'buy_gateway:manual'),
-          ]);
-        }
-
-        const previewLines = [
-          `💰 مبلغ اصلی: ${formatTomans(preview.originalAmountTomans)}`,
-          `🎯 مبلغ پرداخت آنلاین/کیف پول: ${formatTomans(preview.finalAmountTomans)}`,
-        ];
-        if (manualEnabled) {
-          previewLines.push('💳 مبلغ کارت به کارت پس از انتخاب این روش نمایش داده می‌شود.');
-        }
-
-        await ctx.reply(previewLines.join('\n'), {
-          reply_markup: Markup.inlineKeyboard(paymentButtons).reply_markup,
-        });
         return ctx.wizard.next();
       } catch (error) {
         const message =
@@ -226,8 +293,8 @@ const scene = new Scenes.WizardScene<BotContext>(
           return ctx.scene.leave();
         }
 
-        const setting = await prisma.setting.findUnique({ where: { id: 1 } });
-        const cardNumber = setting?.manualCardNumber ?? env.MANUAL_CARD_NUMBER;
+        const manualSetting = await prisma.setting.findUnique({ where: { id: 1 } });
+        const cardNumber = manualSetting?.manualCardNumber ?? env.MANUAL_CARD_NUMBER;
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.reply(
