@@ -21,6 +21,7 @@ const envSchema = z.object({
   LOGO_URL: z.string().url().optional(),
   TETRA98_API_KEY: z.string().min(10),
   MANUAL_CARD_NUMBER: z.string().min(8),
+  MANUAL_CARD_HOLDER_NAME: z.string().min(3).optional(),
   MANUAL_PAYMENT_LOWER_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(5),
   MANUAL_PAYMENT_UPPER_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100).default(5),
   MIN_WALLET_CHARGE_TOMANS: z.coerce.number().int().positive().default(10000),

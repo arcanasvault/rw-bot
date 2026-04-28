@@ -766,13 +766,9 @@ export function registerAdminCommands(bot: Telegraf<BotContext>): void {
     }
 
     try {
-      await paymentOrchestrator.processSuccessfulPayment(payment.id);
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          reviewedByAdminId: adminUserId,
-          reviewNote: 'تایید دستی توسط ادمین',
-        },
+      await paymentOrchestrator.processSuccessfulPayment(payment.id, {
+        reviewedByAdminId: adminUserId,
+        reviewNote: 'تایید دستی توسط ادمین',
       });
 
       await ctx.answerCbQuery('✅ تایید شد');

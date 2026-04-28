@@ -248,15 +248,15 @@ const scene = new Scenes.WizardScene<BotContext>(
         ctx.session.pendingManualPaymentId = payment.id;
         await ctx.answerCbQuery();
         await ctx.reply(
-          `
-💳 لطفا دقیقا مبلغ <code>${payment.amountRials}</code> معادل ${formatTomans(payment.amountTomans)} را به کارت
-
-<code>${cardNumber}</code>
-به نام <b>کریمی</b>
-
-          مبلغ واریزی را <b>عینا مطابق با مبلغ اعلام شده</b> واریز کنید و از رند کردن خودداری نمایید. از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و ... خودداری نمایید.
-در غیر اینصورت تراکنش تایید نمیگردد.
-          `,
+          [
+            `💳 لطفا دقیقا مبلغ <code>${payment.amountRials}</code> معادل ${formatTomans(payment.amountTomans)} را به کارت`,
+            '',
+            `<code>${cardNumber}</code>`,
+            `به نام <b>${env.MANUAL_CARD_HOLDER_NAME}</b>`,
+            '',
+            'مبلغ واریزی را <b>عینا مطابق با مبلغ اعلام شده</b> واریز کنید و از رند کردن خودداری نمایید. از نوشتن توضیحاتی مثل خرید VPN، فیلتر شکن و ... خودداری نمایید.',
+            'در غیر اینصورت تراکنش تایید نمیگردد.',
+          ].join('\n'),
           {
             parse_mode: 'HTML',
           },
